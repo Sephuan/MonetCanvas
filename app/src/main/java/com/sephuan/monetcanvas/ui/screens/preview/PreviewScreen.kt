@@ -2,8 +2,13 @@ package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.Palette
@@ -43,6 +49,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -60,22 +67,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.sephuan.monetcanvas.R
@@ -86,7 +96,6 @@ import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.TonePreference
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,69 +113,111 @@ fun PreviewScreen(
     var showApplyDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRuleSheet by remember { mutableStateOf(false) }
-    var isApplying by remember { mutableStateOf(false) }
 
-    // ★ 跟踪是否正在等待用户从系统确认页返回
-    var waitingForLiveWpReturn by remember { mutableStateOf(false) }
-    var showReturnBanner by remember { mutableStateOf(false) }
-
+    val applyState by viewModel.applyState.collectAsStateWithLifecycle()
+    val showReturnBanner by viewModel.showBanner.collectAsStateWithLifecycle()
+    val bannerSuccess by viewModel.bannerSuccess.collectAsStateWithLifecycle()
     val extractedColors by viewModel.extractedColors.collectAsStateWithLifecycle()
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
     val liveWpResult by viewModel.liveWpResult.collectAsStateWithLifecycle()
-    var currentRule by remember { mutableStateOf<MonetRule?>(null) }
 
-    // 首次加载
-    LaunchedEffect(wallpaper.id) {
-        val rule = viewModel.loadRuleForWallpaper(wallpaper)
-        currentRule = rule
-        viewModel.analyzeColors(wallpaper, rule)
+    val isApplying = applyState == ApplyState.APPLYING
+    val isWaitingConfirm = applyState == ApplyState.WAITING_CONFIRM
+
+    var currentRule by remember { mutableStateOf<MonetRule?>(null) }
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    // ★ 用 rememberUpdatedState 保证 Observer 回调里拿到最新值
+    val currentApplyState by rememberUpdatedState(applyState)
+    val currentRuleState by rememberUpdatedState(currentRule)
+
+    LaunchedEffect(wallpaper.filePath) {
+        if (wallpaper.type == WallpaperType.LIVE) {
+            player?.release()
+            player = ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(Uri.parse("file://${wallpaper.filePath}")))
+                repeatMode = Player.REPEAT_MODE_ALL
+                volume = 0f
+                prepare()
+                playWhenReady = true
+            }
+        }
     }
 
-    // ★ 监听生命周期：用户从系统确认页返回时触发
+    DisposableEffect(Unit) {
+        onDispose {
+            player?.stop()
+            player?.release()
+            player = null
+        }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && waitingForLiveWpReturn) {
-                waitingForLiveWpReturn = false
-                showReturnBanner = true
-
-                // ★ 调用 ViewModel 的回检逻辑
-                //   确认 → promote + 重新取色
-                //   取消 → clear pending
-                viewModel.onReturnFromSystemPage(
-                    context, wallpaper, currentRule ?: MonetRule()
-                )
-
-                // 横幅显示几秒后自动消失
-                scope.launch {
-                    delay(4000)
-                    showReturnBanner = false
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    player?.pause()
                 }
+                Lifecycle.Event.ON_RESUME -> {
+                    player?.play()
+                    if (currentApplyState == ApplyState.WAITING_CONFIRM) {
+                        viewModel.onReturnFromSystemPage(
+                            context, wallpaper, currentRuleState ?: MonetRule()
+                        )
+                    }
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    fun handleApply(target: Int) {
-        if (isApplying) return
-        isApplying = true
-        val rule = currentRule ?: MonetRule()
-
-        if (wallpaper.type == WallpaperType.LIVE) {
-            // ★ 标记：即将跳转系统确认页
-            waitingForLiveWpReturn = true
-        }
-
-        viewModel.applyWallpaper(context, wallpaper, target, rule)
-        isApplying = false
+    LaunchedEffect(wallpaper.id) {
+        val rule = viewModel.loadRuleForWallpaper(wallpaper)
+        currentRule = rule
+        viewModel.analyzeColors(wallpaper, rule)
     }
+
+    fun navigateBack() {
+        player?.stop()
+        player?.release()
+        player = null
+        onBack()
+    }
+
+    fun navigateFullScreen() {
+        player?.pause()
+        onFullScreenClick()
+    }
+
+    fun handleApply(target: Int) {
+        if (isApplying || isWaitingConfirm) return
+        val rule = currentRule ?: MonetRule()
+        if (wallpaper.type == WallpaperType.LIVE) {
+            player?.pause()
+        }
+        viewModel.applyWallpaper(context, wallpaper, target, rule)
+    }
+
+    val applyButtonAlpha by animateFloatAsState(
+        targetValue = if (isApplying || isWaitingConfirm) 0.6f else 1f,
+        animationSpec = tween(300),
+        label = "applyAlpha"
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(wallpaper.fileName) },
+                title = {
+                    Text(
+                        wallpaper.fileName,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = ::navigateBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back))
                     }
                 },
@@ -185,38 +236,64 @@ fun PreviewScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // ★ 返回后提示横幅
-            AnimatedVisibility(
-                visible = showReturnBanner,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
+            // ★ 横幅用 Box 包裹避免 Column 作用域歧义
+            Box(modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showReturnBanner,
+                    enter = expandVertically(tween(300)) + fadeIn(tween(300)),
+                    exit = shrinkVertically(tween(300)) + fadeOut(tween(300))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    val bannerColor by animateColorAsState(
+                        targetValue = if (bannerSuccess)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.surfaceContainerHigh,
+                        animationSpec = tween(500),
+                        label = "bannerColor"
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = bannerColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (isAnalyzing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    "壁纸已设置，正在分析 Monet 配色…",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.CheckCircle, null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    "✓ Monet 配色已更新",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+
                         if (isAnalyzing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .clip(RoundedCornerShape(1.dp))
                             )
                         }
-                        Text(
-                            if (isAnalyzing) "壁纸已设置，正在重新分析 Monet 配色…"
-                            else "✓ Monet 配色已更新",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
                     }
                 }
             }
@@ -236,22 +313,67 @@ fun PreviewScreen(
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    LiveVideoPreview(filePath = wallpaper.filePath)
+                    player?.let { exo ->
+                        AndroidView(
+                            factory = { ctx ->
+                                androidx.media3.ui.PlayerView(ctx).apply {
+                                    useController = false
+                                    this.player = exo
+                                }
+                            },
+                            update = { view ->
+                                if (view.player != player) {
+                                    view.player = player
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
 
                 FilledTonalIconButton(
-                    onClick = onFullScreenClick,
+                    onClick = ::navigateFullScreen,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(12.dp)
                 ) {
                     Icon(Icons.Outlined.Fullscreen, stringResource(R.string.fullscreen_preview))
                 }
+
+                // ★ 遮罩用 Box 包裹
+                Box(modifier = Modifier.fillMaxSize()) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isApplying,
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(200)),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.3f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(R.string.setting_wallpaper),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ━━━━━ Monet 取色预览 ━━━━━
+            // ━━━━━ Monet 取色预览卡片 ━━━━━
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -284,46 +406,70 @@ fun PreviewScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (isAnalyzing) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // ★ 用 Box 包裹每个 AnimatedVisibility
+                    Box {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isAnalyzing,
+                            enter = fadeIn(tween(200)),
+                            exit = fadeOut(tween(200))
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    stringResource(R.string.analyzing),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+
+                    Box {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !isAnalyzing && extractedColors != null,
+                            enter = fadeIn(tween(400)) + expandVertically(tween(400)),
+                            exit = fadeOut(tween(200))
+                        ) {
+                            extractedColors?.let { colors ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    ColorCircle(colors.primary, stringResource(R.string.primary_color))
+                                    colors.secondary?.let {
+                                        ColorCircle(it, stringResource(R.string.secondary_color))
+                                    }
+                                    colors.tertiary?.let {
+                                        ColorCircle(it, stringResource(R.string.tertiary_color))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Box {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !isAnalyzing && extractedColors == null,
+                            enter = fadeIn(tween(300)),
+                            exit = fadeOut(tween(200))
+                        ) {
                             Text(
-                                stringResource(R.string.analyzing),
-                                style = MaterialTheme.typography.bodySmall
+                                stringResource(R.string.extract_failed),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    } else if (extractedColors != null) {
-                        val colors = extractedColors!!
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            ColorCircle(colors.primary, stringResource(R.string.primary_color))
-                            colors.secondary?.let {
-                                ColorCircle(it, stringResource(R.string.secondary_color))
-                            }
-                            colors.tertiary?.let {
-                                ColorCircle(it, stringResource(R.string.tertiary_color))
-                            }
-                        }
-                    } else {
-                        Text(
-                            stringResource(R.string.extract_failed),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     currentRule?.let { rule ->
                         Spacer(modifier = Modifier.height(8.dp))
-                        val desc = buildRuleDescription(
-                            rule, wallpaper.type == WallpaperType.LIVE
-                        )
                         Text(
-                            text = stringResource(R.string.rule_format, desc),
+                            text = stringResource(
+                                R.string.rule_format,
+                                buildRuleDescription(rule, wallpaper.type == WallpaperType.LIVE)
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -348,7 +494,7 @@ fun PreviewScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedButton(
-                    onClick = onFullScreenClick,
+                    onClick = ::navigateFullScreen,
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Outlined.Fullscreen, null, Modifier.size(18.dp))
@@ -357,10 +503,20 @@ fun PreviewScreen(
 
                 Button(
                     onClick = { showApplyDialog = true },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isApplying
+                    modifier = Modifier
+                        .weight(1f)
+                        .alpha(applyButtonAlpha),
+                    enabled = !isApplying && !isWaitingConfirm
                 ) {
-                    Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
+                    if (isApplying) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
+                    }
                     Text(
                         " ${
                             if (isApplying) stringResource(R.string.setting_wallpaper)
@@ -369,34 +525,24 @@ fun PreviewScreen(
                     )
                 }
             }
+
+            Spacer(Modifier.height(32.dp))
         }
     }
 
-    // ━━━━━ 设为壁纸弹窗 ━━━━━
+    // ━━━━━ 弹窗们 ━━━━━
+
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
             onDismiss = { showApplyDialog = false },
-            onApplyHome = {
-                showApplyDialog = false
-                handleApply(1)
-            },
-            onApplyLock = {
-                showApplyDialog = false
-                handleApply(2)
-            },
-            onApplyBoth = {
-                showApplyDialog = false
-                handleApply(3)
-            },
-            onApplyLive = {
-                showApplyDialog = false
-                handleApply(0)
-            }
+            onApplyHome = { showApplyDialog = false; handleApply(1) },
+            onApplyLock = { showApplyDialog = false; handleApply(2) },
+            onApplyBoth = { showApplyDialog = false; handleApply(3) },
+            onApplyLive = { showApplyDialog = false; handleApply(0) }
         )
     }
 
-    // ━━━━━ 删除确认 ━━━━━
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -406,6 +552,9 @@ fun PreviewScreen(
                 TextButton(
                     onClick = {
                         showDeleteDialog = false
+                        player?.stop()
+                        player?.release()
+                        player = null
                         viewModel.deleteWallpaper(context, wallpaper) { onBack() }
                     }
                 ) { Text(stringResource(R.string.delete)) }
@@ -418,7 +567,6 @@ fun PreviewScreen(
         )
     }
 
-    // ━━━━━ 取色规则配置弹窗 ━━━━━
     if (showRuleSheet && currentRule != null) {
         MonetRuleBottomSheet(
             rule = currentRule!!,
@@ -435,7 +583,6 @@ fun PreviewScreen(
         )
     }
 
-    // ━━━━━ 动态壁纸激活失败弹窗 ━━━━━
     if (liveWpResult == LiveWpResult.FAILED) {
         AlertDialog(
             onDismissRequest = { viewModel.clearLiveWpResult() },
@@ -468,7 +615,7 @@ fun PreviewScreen(
                     OutlinedButton(
                         onClick = {
                             viewModel.clearLiveWpResult()
-                            waitingForLiveWpReturn = true
+                            viewModel.resetApplyState()
                             LiveWallpaperSetter.tryActivate(context)
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -481,39 +628,11 @@ fun PreviewScreen(
                     TextButton(
                         onClick = { viewModel.clearLiveWpResult() },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.cancel))
-                    }
+                    ) { Text(stringResource(R.string.cancel)) }
                 }
             }
         )
     }
-}
-
-// ━━━━━ 视频预览组件 ━━━━━
-@Composable
-private fun LiveVideoPreview(filePath: String) {
-    val context = LocalContext.current
-    val player = remember(filePath) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse("file://$filePath")))
-            repeatMode = ExoPlayer.REPEAT_MODE_ALL
-            volume = 0f
-            prepare()
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(player) { onDispose { player.release() } }
-
-    AndroidView(
-        factory = {
-            androidx.media3.ui.PlayerView(it).apply {
-                useController = false
-                this.player = player
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
 }
 
 // ━━━━━ 取色规则弹窗 ━━━━━
@@ -535,17 +654,11 @@ private fun MonetRuleBottomSheet(
                 .fillMaxWidth()
                 .padding(24.dp)
         ) {
-            Text(
-                stringResource(R.string.color_rules),
-                style = MaterialTheme.typography.headlineSmall
-            )
+            Text(stringResource(R.string.color_rules), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
 
             if (isLiveWallpaper) {
-                Text(
-                    stringResource(R.string.frame_position),
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Text(stringResource(R.string.frame_position), style = MaterialTheme.typography.titleMedium)
                 Text(
                     stringResource(R.string.frame_position_desc),
                     style = MaterialTheme.typography.bodySmall,
@@ -563,10 +676,7 @@ private fun MonetRuleBottomSheet(
                                 count = FramePickPosition.entries.size
                             )
                         ) {
-                            Text(
-                                framePositionLabel(pos),
-                                style = MaterialTheme.typography.labelMedium
-                            )
+                            Text(framePositionLabel(pos), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -574,10 +684,7 @@ private fun MonetRuleBottomSheet(
                 HorizontalDivider(Modifier.padding(vertical = 16.dp))
             }
 
-            Text(
-                stringResource(R.string.color_region),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(stringResource(R.string.color_region), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ColorRegion.entries.filter { it != ColorRegion.CUSTOM }.forEach { region ->
@@ -591,10 +698,7 @@ private fun MonetRuleBottomSheet(
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
-            Text(
-                stringResource(R.string.tone_preference),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(stringResource(R.string.tone_preference), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TonePreference.entries.forEach { tone ->
@@ -626,7 +730,6 @@ private fun MonetRuleBottomSheet(
     }
 }
 
-// ━━━━━ 颜色圆点 ━━━━━
 @Composable
 private fun ColorCircle(colorInt: Int, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -642,7 +745,6 @@ private fun ColorCircle(colorInt: Int, label: String) {
     }
 }
 
-// ━━━━━ 设为壁纸弹窗 ━━━━━
 @Composable
 private fun ApplyWallpaperDialog(
     isLive: Boolean,
@@ -686,7 +788,6 @@ private fun ApplyWallpaperDialog(
     )
 }
 
-// ━━━━━ 多语言标签 ━━━━━
 @Composable
 private fun framePositionLabel(pos: FramePickPosition): String = when (pos) {
     FramePickPosition.FIRST -> stringResource(R.string.frame_first)

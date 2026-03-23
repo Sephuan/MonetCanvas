@@ -1,5 +1,14 @@
 package com.sephuan.monetcanvas.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -26,12 +36,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
-import com.sephuan.monetcanvas.data.repository.WallpaperRepository
 import com.sephuan.monetcanvas.ui.screens.home.HomeScreen
 import com.sephuan.monetcanvas.ui.screens.preview.FullScreenPreview
 import com.sephuan.monetcanvas.ui.screens.preview.PreviewScreen
 import com.sephuan.monetcanvas.ui.screens.settings.SettingsScreen
-import javax.inject.Inject
+
+private const val ANIM_DURATION = 350
+private const val ANIM_DURATION_FAST = 250
 
 private object Routes {
     const val HOME = "home"
@@ -47,7 +58,6 @@ private object Routes {
 fun MonetNavGraph(
     navController: NavHostController = rememberNavController()
 ) {
-    // 用一个简单的内存缓存避免重复查库
     var cachedWallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
     var cachedWallpaperId by remember { mutableLongStateOf(-1L) }
 
@@ -55,7 +65,32 @@ fun MonetNavGraph(
         navController = navController,
         startDestination = Routes.HOME
     ) {
-        composable(Routes.HOME) {
+        // ━━━━━ 主页 ━━━━━
+        composable(
+            route = Routes.HOME,
+            enterTransition = {
+                fadeIn(tween(ANIM_DURATION))
+            },
+            exitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetOffset = { it / 6 }
+                        )
+            },
+            popEnterTransition = {
+                fadeIn(tween(ANIM_DURATION, easing = FastOutSlowInEasing)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialOffset = { it / 6 }
+                        )
+            },
+            popExitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST))
+            }
+        ) {
             HomeScreen(
                 onWallpaperClick = { wallpaper ->
                     cachedWallpaper = wallpaper
@@ -68,9 +103,42 @@ fun MonetNavGraph(
             )
         }
 
+        // ━━━━━ 预览页 ━━━━━
         composable(
             route = Routes.PREVIEW,
-            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
+            enterTransition = {
+                fadeIn(tween(ANIM_DURATION, easing = FastOutSlowInEasing)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialOffset = { it / 4 }
+                        )
+            },
+            exitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetOffset = { it / 6 }
+                        )
+            },
+            popEnterTransition = {
+                fadeIn(tween(ANIM_DURATION, easing = FastOutSlowInEasing)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialOffset = { it / 6 }
+                        )
+            },
+            popExitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetOffset = { it / 4 }
+                        )
+            }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
             val viewModel: NavPreviewViewModel = hiltViewModel()
@@ -78,7 +146,6 @@ fun MonetNavGraph(
             var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
             var loadFailed by remember { mutableStateOf(false) }
 
-            // 优先用缓存，否则从数据库查
             LaunchedEffect(wallpaperId) {
                 if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
                     wallpaper = cachedWallpaper
@@ -97,7 +164,6 @@ fun MonetNavGraph(
             when {
                 loadFailed -> {
                     RecoveryScreen(
-                        message = "壁纸不存在或已删除",
                         onGoHome = {
                             navController.navigate(Routes.HOME) {
                                 popUpTo(0) { inclusive = true }
@@ -106,9 +172,7 @@ fun MonetNavGraph(
                         }
                     )
                 }
-
                 wallpaper == null -> {
-                    // 加载中
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -117,7 +181,6 @@ fun MonetNavGraph(
                         Text("加载中...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
                 else -> {
                     PreviewScreen(
                         wallpaper = wallpaper!!,
@@ -130,9 +193,38 @@ fun MonetNavGraph(
             }
         }
 
+        // ━━━━━ 全屏预览 ━━━━━
         composable(
             route = Routes.FULL_SCREEN,
-            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
+            enterTransition = {
+                fadeIn(tween(ANIM_DURATION_FAST)) +
+                        scaleIn(
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialScale = 0.92f
+                        )
+            },
+            exitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST)) +
+                        scaleOut(
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetScale = 0.92f
+                        )
+            },
+            popEnterTransition = {
+                fadeIn(tween(ANIM_DURATION_FAST)) +
+                        scaleIn(
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialScale = 0.92f
+                        )
+            },
+            popExitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST)) +
+                        scaleOut(
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetScale = 0.92f
+                        )
+            }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
             val viewModel: NavPreviewViewModel = hiltViewModel()
@@ -158,7 +250,6 @@ fun MonetNavGraph(
             when {
                 loadFailed -> {
                     RecoveryScreen(
-                        message = "壁纸不存在或已删除",
                         onGoHome = {
                             navController.navigate(Routes.HOME) {
                                 popUpTo(0) { inclusive = true }
@@ -167,7 +258,6 @@ fun MonetNavGraph(
                         }
                     )
                 }
-
                 wallpaper == null -> {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -177,7 +267,6 @@ fun MonetNavGraph(
                         Text("加载中...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
                 else -> {
                     FullScreenPreview(
                         wallpaper = wallpaper!!,
@@ -187,7 +276,42 @@ fun MonetNavGraph(
             }
         }
 
-        composable(Routes.SETTINGS) {
+        // ━━━━━ 设置页 ━━━━━
+        composable(
+            route = Routes.SETTINGS,
+            enterTransition = {
+                fadeIn(tween(ANIM_DURATION, easing = FastOutSlowInEasing)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialOffset = { it / 4 }
+                        )
+            },
+            exitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetOffset = { it / 6 }
+                        )
+            },
+            popEnterTransition = {
+                fadeIn(tween(ANIM_DURATION, easing = FastOutSlowInEasing)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(ANIM_DURATION, easing = FastOutSlowInEasing),
+                            initialOffset = { it / 6 }
+                        )
+            },
+            popExitTransition = {
+                fadeOut(tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(ANIM_DURATION_FAST, easing = FastOutSlowInEasing),
+                            targetOffset = { it / 4 }
+                        )
+            }
+        ) {
             SettingsScreen(
                 onBack = { navController.popBackStack() }
             )
@@ -197,7 +321,6 @@ fun MonetNavGraph(
 
 @Composable
 private fun RecoveryScreen(
-    message: String = "页面状态丢失",
     onGoHome: () -> Unit
 ) {
     Column(
@@ -205,7 +328,7 @@ private fun RecoveryScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("壁纸不存在或已删除", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onGoHome) { Text("返回主页") }
     }

@@ -2,6 +2,15 @@ package com.sephuan.monetcanvas.ui.screens.home
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -19,7 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,15 +112,12 @@ fun HomeScreen(
     val liveCount by viewModel.liveCount.collectAsStateWithLifecycle()
     val favoritesCount by viewModel.favoritesCount.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) { viewModel.seedDemoDataIfEmpty() }
-
     val pickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) viewModel.importWallpaper(context, uri)
     }
 
-    // ━━━━━ Pager 状态：0=壁纸库, 1=收藏 ━━━━━
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
 
     Scaffold(
@@ -127,7 +133,9 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { pickerLauncher.launch("*/*") }) {
+            FloatingActionButton(
+                onClick = { pickerLauncher.launch("*/*") }
+            ) {
                 Icon(Icons.Filled.Add, stringResource(R.string.import_wallpaper))
             }
         }
@@ -137,7 +145,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // ━━━━━ TabRow：壁纸库 | 收藏 ━━━━━
+            // ━━━━━ TabRow ━━━━━
             TabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -157,10 +165,7 @@ fun HomeScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Collections, null,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Icon(Icons.Outlined.Collections, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.tab_library))
                         }
@@ -184,11 +189,11 @@ fun HomeScreen(
                 )
             }
 
-            // ━━━━━ HorizontalPager：丝滑左右滑动 ━━━━━
+            // ━━━━━ HorizontalPager ━━━━━
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                beyondViewportPageCount = 1  // 预加载相邻页，让滑动更丝滑
+                beyondViewportPageCount = 1
             ) { page ->
                 when (page) {
                     0 -> LibraryPage(
@@ -225,49 +230,53 @@ private fun LibraryPage(
     onWallpaperClick: (WallpaperEntity) -> Unit,
     onLongClick: (WallpaperEntity) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 筛选栏：All / Static / Live
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = currentFilter == FilterType.ALL,
-                onClick = { onFilterChange(FilterType.ALL) },
-                label = { Text("${stringResource(R.string.filter_all)}(${staticCount + liveCount})") }
-            )
-            FilterChip(
-                selected = currentFilter == FilterType.STATIC,
-                onClick = { onFilterChange(FilterType.STATIC) },
-                label = { Text("${stringResource(R.string.filter_static)}($staticCount)") }
-            )
-            FilterChip(
-                selected = currentFilter == FilterType.LIVE,
-                onClick = { onFilterChange(FilterType.LIVE) },
-                label = { Text("${stringResource(R.string.filter_live)}($liveCount)") }
-            )
-        }
-
-        if (wallpapers.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+    // ★ 用 Box 包裹整体，避免 Column 作用域歧义
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    stringResource(R.string.empty_hint),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                FilterChip(
+                    selected = currentFilter == FilterType.ALL,
+                    onClick = { onFilterChange(FilterType.ALL) },
+                    label = { Text("${stringResource(R.string.filter_all)}(${staticCount + liveCount})") }
+                )
+                FilterChip(
+                    selected = currentFilter == FilterType.STATIC,
+                    onClick = { onFilterChange(FilterType.STATIC) },
+                    label = { Text("${stringResource(R.string.filter_static)}($staticCount)") }
+                )
+                FilterChip(
+                    selected = currentFilter == FilterType.LIVE,
+                    onClick = { onFilterChange(FilterType.LIVE) },
+                    label = { Text("${stringResource(R.string.filter_live)}($liveCount)") }
                 )
             }
-        } else {
-            WallpaperGrid(
-                items = wallpapers,
-                gridSize = gridSize,
-                onClick = onWallpaperClick,
-                onLongClick = onLongClick
-            )
+
+            if (wallpapers.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        stringResource(R.string.empty_hint),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                WallpaperGrid(
+                    items = wallpapers,
+                    gridSize = gridSize,
+                    onClick = onWallpaperClick,
+                    onLongClick = onLongClick
+                )
+            }
         }
     }
 }
@@ -282,7 +291,9 @@ private fun FavoritesPage(
 ) {
     if (favorites.isEmpty()) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -311,7 +322,7 @@ private fun FavoritesPage(
     }
 }
 
-// ━━━━━ 通用壁纸网格 ━━━━━
+// ━━━━━ 通用壁纸网格（★ 带入场动画）━━━━━
 @Composable
 private fun WallpaperGrid(
     items: List<WallpaperEntity>,
@@ -319,6 +330,8 @@ private fun WallpaperGrid(
     onClick: (WallpaperEntity) -> Unit,
     onLongClick: (WallpaperEntity) -> Unit
 ) {
+    val animationKey = remember(items.size, gridSize) { "${items.size}_${gridSize.name}" }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(gridSize.columns),
         modifier = Modifier.fillMaxSize(),
@@ -326,13 +339,36 @@ private fun WallpaperGrid(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        items(items, key = { it.id }) { item ->
-            WallpaperCard(
-                item = item,
-                gridSize = gridSize,
-                onClick = { onClick(item) },
-                onLongClick = { onLongClick(item) }
-            )
+        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+            // ★ 用 Box 包裹 AnimatedVisibility，避免 LazyGrid 作用域歧义
+            var visible by remember(animationKey) { mutableStateOf(false) }
+            LaunchedEffect(animationKey) { visible = true }
+
+            Box {
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn(
+                        animationSpec = tween(
+                            durationMillis = 300,
+                            delayMillis = (index % (gridSize.columns * 3)) * 30,
+                            easing = FastOutSlowInEasing
+                        )
+                    ) + slideInVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        initialOffsetY = { it / 3 }
+                    )
+                ) {
+                    WallpaperCard(
+                        item = item,
+                        gridSize = gridSize,
+                        onClick = { onClick(item) },
+                        onLongClick = { onLongClick(item) }
+                    )
+                }
+            }
         }
     }
 }
@@ -353,14 +389,16 @@ private fun WallpaperCard(
         item.thumbnailPath.isNotBlank() && File(item.thumbnailPath).exists()
     }
 
-    val previewModel = when {
-        thumbnailExists -> item.thumbnailPath
-        item.type == WallpaperType.LIVE -> ImageRequest.Builder(context)
-            .data(item.filePath)
-            .videoFrameMillis(0)
-            .crossfade(true)
-            .build()
-        else -> item.filePath
+    val previewModel = remember(item.filePath, item.thumbnailPath, thumbnailExists) {
+        when {
+            thumbnailExists -> item.thumbnailPath
+            item.type == WallpaperType.LIVE -> ImageRequest.Builder(context)
+                .data(item.filePath)
+                .videoFrameMillis(0)
+                .crossfade(true)
+                .build()
+            else -> item.filePath
+        }
     }
 
     val aspectRatio = when (gridSize) {
@@ -383,14 +421,23 @@ private fun WallpaperCard(
                 }
             )
     ) {
+        // ★ 图片带 crossfade 淡入
         AsyncImage(
-            model = previewModel,
+            model = ImageRequest.Builder(context)
+                .data(
+                    when (previewModel) {
+                        is ImageRequest -> previewModel
+                        else -> previewModel
+                    }
+                )
+                .crossfade(300)
+                .build(),
             contentDescription = item.fileName,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
 
-        // 左上角：动态壁纸标签
+        // 左上角：动态标签
         if (item.type == WallpaperType.LIVE) {
             Surface(
                 modifier = Modifier
@@ -421,17 +468,30 @@ private fun WallpaperCard(
             }
         }
 
-        // 右上角：收藏标记
-        if (item.isFavorite) {
-            Icon(
-                imageVector = Icons.Filled.Favorite,
-                contentDescription = stringResource(R.string.favorited_label),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(18.dp),
-                tint = Color(0xFFFF4081)
-            )
+        // 右上角：收藏标记（★ 用 Box 包裹避免歧义）
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp)
+        ) {
+            AnimatedVisibility(
+                visible = item.isFavorite,
+                enter = fadeIn(tween(200)) + scaleIn(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    initialScale = 0.3f
+                ),
+                exit = fadeOut(tween(200))
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite,
+                    contentDescription = stringResource(R.string.favorited_label),
+                    modifier = Modifier.size(18.dp),
+                    tint = Color(0xFFFF4081)
+                )
+            }
         }
 
         // 底部：文件名
