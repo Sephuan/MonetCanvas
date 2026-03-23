@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MonetCanvas</string>
+
+    <!-- 通用 -->
+    <string name="back">返回</string>
+    <string name="settings">设置</string>
+    <string name="cancel">取消</string>
+    <string name="delete">删除</string>
+    <string name="confirm">确定</string>
+
+    <!-- 主页标签页 -->
+    <string name="tab_library">壁纸库</string>
+    <string name="tab_favorites">收藏</string>
+    <string name="favorites_empty">暂无收藏\n长按壁纸可以收藏</string>
+
+    <!-- 主页 -->
+    <string name="filter_all">全部</string>
+    <string name="filter_static">静态</string>
+    <string name="filter_live">动态</string>
+    <string name="filter_favorites">收藏</string>
+    <string name="empty_hint">暂无壁纸，点击右下角 + 导入</string>
+    <string name="import_wallpaper">导入壁纸</string>
+    <string name="live_label">动态</string>
+    <string name="favorited_label">已收藏</string>
+    <string name="grid_small_label">小</string>
+    <string name="grid_medium_label">中</string>
+    <string name="grid_large_label">大</string>
+    <string name="grid_list_label">列表</string>
+    <string name="grid_columns">%1$s (%2$d列)</string>
+    <string name="grid_size_desc">网格大小</string>
+
+    <!-- 预览页 -->
+    <string name="color_preview_static">配色预览</string>
+    <string name="color_preview_live">Monet 取色预览（动态壁纸）</string>
+    <string name="configure">配置</string>
+    <string name="analyzing">正在分析…</string>
+    <string name="extract_failed">未能提取颜色</string>
+    <string name="rule_format">规则：%1$s</string>
+    <string name="monet_hint">设为壁纸后，系统 Monet 主题会按此规则取色</string>
+    <string name="fullscreen">全屏</string>
+    <string name="fullscreen_preview">全屏预览</string>
+    <string name="close_fullscreen">关闭全屏</string>
+    <string name="set_wallpaper">设为壁纸</string>
+    <string name="setting_wallpaper">设置中…</string>
+    <string name="set_live_wallpaper">设为动态壁纸</string>
+    <string name="apply_home">仅桌面</string>
+    <string name="apply_lock">仅锁屏</string>
+    <string name="apply_both">桌面和锁屏</string>
+    <string name="delete_wallpaper">删除壁纸</string>
+    <string name="delete_confirm">确定删除这张壁纸吗？</string>
+    <string name="primary_color">主色</string>
+    <string name="secondary_color">次色</string>
+    <string name="tertiary_color">第三色</string>
+
+    <!-- 取色规则 -->
+    <string name="color_rules">取色规则</string>
+    <string name="frame_position">取色帧位置</string>
+    <string name="frame_position_desc">选择从视频的哪个位置提取颜色</string>
+    <string name="frame_first">起始帧</string>
+    <string name="frame_middle">中间帧</string>
+    <string name="frame_last">最后帧</string>
+    <string name="frame_random">随机帧</string>
+    <string name="color_region">取色区域</string>
+    <string name="region_full">整幅画面</string>
+    <string name="region_center">中心区域</string>
+    <string name="region_top">上半部分</string>
+    <string name="region_bottom">下半部分</string>
+    <string name="tone_preference">色调偏好</string>
+    <string name="tone_auto">自动</string>
+    <string name="tone_vibrant">鲜艳</string>
+    <string name="tone_muted">柔和</string>
+    <string name="tone_dominant">主导色</string>
+    <string name="tone_dark">偏深色</string>
+    <string name="tone_light">偏浅色</string>
+    <string name="save_and_analyze">保存并重新分析</string>
+
+    <!-- 设置页 -->
+    <string name="settings_theme">软件配色</string>
+    <string name="settings_theme_desc">选择 App 界面的颜色来源</string>
+    <string name="theme_monet">跟随系统</string>
+    <string name="theme_rule">取色规则</string>
+    <string name="theme_custom">自选颜色</string>
+    <string name="choose_theme_color">选择主题色</string>
+    <string name="current_format">当前：%1$s</string>
+    <string name="theme_rule_desc">颜色将从你最近设置壁纸时的取色规则中提取</string>
+    <string name="not_selected">未选择</string>
+
+    <string name="settings_dark_mode">深色模式</string>
+    <string name="settings_dark_mode_desc">控制 App 的亮色/暗色显示</string>
+    <string name="dark_system">跟随系统</string>
+    <string name="dark_light">亮色</string>
+    <string name="dark_dark">暗色</string>
+
+    <string name="settings_language">语言</string>
+    <string name="settings_language_desc">切换 App 显示语言</string>
+    <string name="lang_system">跟随系统</string>
+    <string name="lang_zh">简体中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_restart_title">需要重启</string>
+    <string name="lang_restart_msg">切换语言后需要重启应用才能完全生效</string>
+    <string name="restart_now">立即重启</string>
+    <string name="restart_later">稍后</string>
+
+    <string name="settings_storage">存储管理</string>
+    <string name="backup_dir_format">备份目录：%1$s</string>
+    <string name="storage_desc">壁纸文件始终安全保存在应用私有目录中，备份目录用于同步和共享</string>
+    <string name="default_storage">应用私有目录（默认）</string>
+    <string name="select_dir">选择目录</string>
+    <string name="cancel_backup_dir">取消备份</string>
+    <string name="sync_wallpapers">同步壁纸（导入 + 清理无效）</string>
+    <string name="syncing">同步中…</string>
+    <string name="cleanup_invalid">清理无效</string>
+    <string name="backup_all">备份全部</string>
+    <string name="backing_up">备份中…</string>
+    <string name="switch_backup_dir">切换备份目录</string>
+    <string name="migrate_dialog_text">检测到已有备份目录，是否将旧目录中的壁纸文件迁移到新目录？</string>
+    <string name="migrate_option">选择「迁移」：旧目录的文件会复制到新目录，然后删除旧文件</string>
+    <string name="no_migrate_option">选择「不迁移」：仅切换目录，旧目录文件保持不动</string>
+    <string name="migrate_note">无论如何选择，App 内的壁纸不受影响（存在私有目录中）</string>
+    <string name="migrate_files">迁移文件</string>
+    <string name="no_migrate">不迁移</string>
+    <string name="cleaned_format">清理 %1$d</string>
+    <string name="imported_format">导入 %1$d</string>
+    <string name="skipped_format">跳过 %1$d</string>
+    <string name="failed_format">失败 %1$d</string>
+    <string name="new_backup_format">新备份 %1$d</string>
+
+    <string name="settings_about">关于</string>
+    <string name="about_desc">一款支持静态 + 动态壁纸管理的 Material You 壁纸应用</string>
+    <string name="about_storage_note">壁纸文件安全存储在应用私有目录，不受相册/外部删除影响</string>
+
+    <!-- 预设颜色名 -->
+    <string name="color_sakura">樱花粉</string>
+    <string name="color_sky">天空蓝</string>
+    <string name="color_mint">薄荷绿</string>
+    <string name="color_amber">琥珀橙</string>
+    <string name="color_lavender">薰衣紫</string>
+    <string name="color_graphite">石墨黑</string>
+    <string name="color_coral">珊瑚红</string>
+    <string name="color_teal">青碧色</string>
+    <string name="color_indigo">靛蓝色</string>
+    <string name="color_lemon">柠檬黄</string>
+
+    <!-- 首次启动引导 -->
+    <string name="welcome_title">欢迎使用 MonetCanvas</string>
+    <string name="welcome_subtitle">一款支持 Material You 动态取色的壁纸管理应用</string>
+    <string name="welcome_feature_1">导入静态/动态壁纸，一键设置</string>
+    <string name="welcome_feature_2">动态壁纸自动提取颜色，驱动系统 Monet 主题</string>
+    <string name="welcome_feature_3">壁纸安全存储在应用私有目录，不受外部删除影响</string>
+    <string name="welcome_note">提示：设置动态壁纸时，系统会弹出确认页面，请点击\"设置壁纸\"完成操作。</string>
+    <string name="welcome_start">开始使用</string>
+
+    <!-- 通知权限 -->
+    <string name="notif_perm_title">允许通知</string>
+    <string name="notif_perm_desc">MonetCanvas 需要通知权限来在后台运行动态壁纸服务。如果拒绝，动态壁纸功能可能受限。</string>
+    <string name="notif_perm_allow">允许</string>
+    <string name="notif_perm_skip">跳过</string>
+
+    <!-- 动态壁纸服务激活 -->
+    <string name="live_wp_setup_title">激活动态壁纸服务</string>
+    <string name="live_wp_setup_desc">MonetCanvas 提供动态壁纸服务，可以将视频设为动态壁纸，并自动提取颜色驱动系统 Monet 主题。\n\n点击「激活」后，系统会弹出确认页面。请点击「设置壁纸」完成激活。\n\n即使现在没有导入壁纸也可以先激活，之后随时可以在 App 内设置。</string>
+    <string name="live_wp_setup_hint">你也可以稍后在设置动态壁纸时自动激活，不影响使用。</string>
+    <string name="live_wp_setup_enable">激活</string>
+    <string name="live_wp_setup_later">稍后</string>
+    <string name="live_wp_setup_fallback">你的设备不支持直接激活，请在系统壁纸设置中选择 MonetCanvas</string>
+
+    <!-- 动态壁纸设置提示 -->
+    <string name="live_wp_file_invalid">视频文件无效或不存在</string>
+    <string name="live_wp_chooser_hint">请在列表中找到并选择「MonetCanvas」</string>
+    <string name="live_wp_manual_hint">请前往「壁纸」设置，选择「MonetCanvas」动态壁纸</string>
+    <string name="live_wp_all_failed">无法打开壁纸设置页。请手动进入系统设置 → 壁纸 → 选择「MonetCanvas」</string>
+
+    <!-- ★ 新增：动态壁纸权限不足弹窗 -->
+    <string name="live_wp_perm_title">无法设置动态壁纸</string>
+    <string name="live_wp_perm_desc">设置动态壁纸需要先激活 MonetCanvas 的动态壁纸服务。\n\n可能的原因：\n• 动态壁纸服务尚未激活\n• 系统限制了后台服务权限\n• 电池优化阻止了服务运行\n\n请前往系统设置，检查以下项目：\n1. 确认 MonetCanvas 的权限已全部授予\n2. 关闭电池优化（不受限制）\n3. 允许后台活动</string>
+    <string name="live_wp_perm_go_settings">前往应用设置</string>
+    <string name="live_wp_perm_retry">重试激活</string>
+</resources>
