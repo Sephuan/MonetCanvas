@@ -5,7 +5,6 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.service.wallpaper.WallpaperService
@@ -24,14 +23,12 @@ class LiveWallpaperService : WallpaperService() {
     companion object {
         const val PREFS_NAME = "wallpaper_prefs"
 
-        // ★ 正式桌面配置（Active）
         const val KEY_LIVE_PATH = "live_wallpaper_path"
         const val KEY_FRAME_POSITION = "live_frame_position"
         const val KEY_COLOR_REGION = "live_color_region"
         const val KEY_TONE_PREFERENCE = "live_tone_preference"
         const val KEY_CONFIG_VERSION = "live_config_version"
 
-        // ★ 预览界面配置（Pending）
         const val KEY_PENDING_PATH = "pending_live_path"
         const val KEY_PENDING_FRAME = "pending_frame_position"
         const val KEY_PENDING_REGION = "pending_color_region"
@@ -62,10 +59,8 @@ class LiveWallpaperService : WallpaperService() {
             applicationContext.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         }
 
-        // ★ 核心魔法：判断当前是系统确认页（预览），还是真正的桌面
         private val isPreviewEngine get() = isPreview
 
-        // 根据状态动态选择读取哪一套配置
         private val pathKey get() = if (isPreviewEngine) KEY_PENDING_PATH else KEY_LIVE_PATH
         private val frameKey get() = if (isPreviewEngine) KEY_PENDING_FRAME else KEY_FRAME_POSITION
         private val regionKey get() = if (isPreviewEngine) KEY_PENDING_REGION else KEY_COLOR_REGION
@@ -77,8 +72,7 @@ class LiveWallpaperService : WallpaperService() {
             Log.d(TAG, "onCreate (isPreview=$isPreviewEngine)")
             prefs.registerOnSharedPreferenceChangeListener(this)
 
-            // 如果是预览页，优先读 pending，读不到则降级读 live
-            val path = prefs.getString(pathKey, null) ?: if (isPreviewEngine) prefs.getString(KEY_LIVE_PATH, null) else null
+            val path = resolveCurrentPath()
 
             if (!path.isNullOrBlank() && File(path).exists()) {
                 currentVideoPath = path
@@ -104,7 +98,29 @@ class LiveWallpaperService : WallpaperService() {
                 return
             }
 
-            // 每次回到桌面且不是预览时，通知系统颜色
+            // ★ 兜底：变为可见时，如果颜色还没算出来，主动再尝试一次
+            if (computedColors == null) {
+                val path = resolveCurrentPath()
+                if (!path.isNullOrBlank() && File(path).exists()) {
+                    if (path != currentVideoPath) {
+                        currentVideoPath = path
+                        retryCount = 0
+                        mainHandler.post { loadAndPlay() }
+                    }
+                    Thread { extractAndReportColors(path) }.start()
+                }
+            }
+
+            // ★ 兜底：路径变了但还没加载
+            val latestPath = resolveCurrentPath()
+            if (!latestPath.isNullOrBlank() && latestPath != currentVideoPath && File(latestPath).exists()) {
+                currentVideoPath = latestPath
+                retryCount = 0
+                mainHandler.post { loadAndPlay() }
+                Thread { extractAndReportColors(latestPath) }.start()
+            }
+
+            // 通知系统颜色
             if (!isPreviewEngine && computedColors != null) {
                 mainHandler.post {
                     try { notifyColorsChanged() } catch (_: Exception) {}
@@ -139,15 +155,13 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-            // ★ 只响应属于自己这套配置的版本号变化
-            // 桌面只管 KEY_CONFIG_VERSION，预览页只管 KEY_PENDING_VERSION
             if (key == versionKey) {
-                val path = prefs.getString(pathKey, null) ?: if (isPreviewEngine) prefs.getString(KEY_LIVE_PATH, null) else null
+                val path = resolveCurrentPath()
 
                 if (!path.isNullOrBlank() && File(path).exists()) {
                     val pathChanged = path != currentVideoPath
                     currentVideoPath = path
-                    Log.d(TAG, "配置更新 (isPreview=$isPreviewEngine), path=$path")
+                    Log.d(TAG, "配置更新 (isPreview=$isPreviewEngine), path=$path, changed=$pathChanged")
 
                     Thread { extractAndReportColors(path) }.start()
 
@@ -159,9 +173,58 @@ class LiveWallpaperService : WallpaperService() {
             }
         }
 
+        /**
+         * ★ 统一路径解析：优先读自己角色的 key，再 fallback
+         *
+         * 预览引擎：PENDING → ACTIVE
+         * 桌面引擎：ACTIVE → PENDING（兜底，解决静态→动态时 ACTIVE 还没写入的问题）
+         */
+        private fun resolveCurrentPath(): String? {
+            val primary = prefs.getString(pathKey, null)
+            if (!primary.isNullOrBlank()) return primary
+
+            // fallback
+            return if (isPreviewEngine) {
+                prefs.getString(KEY_LIVE_PATH, null)
+            } else {
+                prefs.getString(KEY_PENDING_PATH, null)
+            }
+        }
+
+        private fun resolveFrameKey(): String {
+            val primary = prefs.getString(frameKey, null)
+            if (!primary.isNullOrBlank()) return primary
+            return if (isPreviewEngine) {
+                prefs.getString(KEY_FRAME_POSITION, "FIRST") ?: "FIRST"
+            } else {
+                prefs.getString(KEY_PENDING_FRAME, "FIRST") ?: "FIRST"
+            }
+        }
+
+        private fun resolveRegionKey(): String {
+            val primary = prefs.getString(regionKey, null)
+            if (!primary.isNullOrBlank()) return primary
+            return if (isPreviewEngine) {
+                prefs.getString(KEY_COLOR_REGION, "FULL_FRAME") ?: "FULL_FRAME"
+            } else {
+                prefs.getString(KEY_PENDING_REGION, "FULL_FRAME") ?: "FULL_FRAME"
+            }
+        }
+
+        private fun resolveToneKey(): String {
+            val primary = prefs.getString(toneKey, null)
+            if (!primary.isNullOrBlank()) return primary
+            return if (isPreviewEngine) {
+                prefs.getString(KEY_TONE_PREFERENCE, "AUTO") ?: "AUTO"
+            } else {
+                prefs.getString(KEY_PENDING_TONE, "AUTO") ?: "AUTO"
+            }
+        }
+
+        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         private fun loadAndPlay() {
             val holder = currentHolder ?: return
-            val path = prefs.getString(pathKey, null) ?: if (isPreviewEngine) prefs.getString(KEY_LIVE_PATH, null) else null
+            val path = resolveCurrentPath()
             if (path.isNullOrBlank() || !File(path).exists()) return
 
             releasePlayer()
@@ -170,7 +233,7 @@ class LiveWallpaperService : WallpaperService() {
             try {
                 exoPlayer = ExoPlayer.Builder(applicationContext).build().apply {
                     setVideoSurface(holder.surface)
-                    setMediaItem(MediaItem.fromUri(Uri.parse("file://$path")))
+                    setMediaItem(MediaItem.fromUri(android.net.Uri.parse("file://$path")))
                     repeatMode = Player.REPEAT_MODE_ALL
                     volume = 0f
 
@@ -194,6 +257,7 @@ class LiveWallpaperService : WallpaperService() {
                     prepare()
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "loadAndPlay failed", e)
                 releasePlayer()
             }
         }
@@ -203,9 +267,10 @@ class LiveWallpaperService : WallpaperService() {
             try {
                 retriever.setDataSource(videoPath)
 
-                // ★ 根据当前是桌面还是预览，读取对应的规则
-                val framePos = prefs.getString(frameKey, "FIRST") ?: "FIRST"
-                val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                val framePos = resolveFrameKey()
+                val durationMs = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
 
                 val targetTimeUs = when (framePos) {
                     "FIRST" -> 0L
@@ -215,13 +280,16 @@ class LiveWallpaperService : WallpaperService() {
                     else -> 0L
                 }
 
-                val frame: Bitmap = retriever.getFrameAtTime(targetTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return
+                val frame: Bitmap = retriever.getFrameAtTime(
+                    targetTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                ) ?: return
 
-                val region = prefs.getString(regionKey, "FULL_FRAME") ?: "FULL_FRAME"
+                val region = resolveRegionKey()
                 val cropped = cropBitmap(frame, region)
                 val palette = Palette.from(cropped).maximumColorCount(16).generate()
 
-                val tonePref = prefs.getString(toneKey, "AUTO") ?: "AUTO"
+                val tonePref = resolveToneKey()
                 val primarySwatch = when (tonePref) {
                     "VIBRANT" -> palette.vibrantSwatch ?: palette.lightVibrantSwatch ?: palette.dominantSwatch
                     "MUTED" -> palette.mutedSwatch ?: palette.lightMutedSwatch ?: palette.dominantSwatch
@@ -232,13 +300,17 @@ class LiveWallpaperService : WallpaperService() {
                 }
 
                 val primaryColor = primarySwatch?.rgb ?: Color.BLUE
-                val allSwatches = palette.swatches.sortedByDescending { it.population }.filter { it.rgb != primaryColor }
+                val allSwatches = palette.swatches
+                    .sortedByDescending { it.population }
+                    .filter { it.rgb != primaryColor }
 
                 computedColors = WallpaperColors(
                     Color.valueOf(primaryColor),
                     allSwatches.getOrNull(0)?.rgb?.let { Color.valueOf(it) },
                     allSwatches.getOrNull(1)?.rgb?.let { Color.valueOf(it) }
                 )
+
+                Log.d(TAG, "★ 颜色提取完成: #${Integer.toHexString(primaryColor)} (isPreview=$isPreviewEngine)")
 
                 mainHandler.post {
                     try { notifyColorsChanged() } catch (_: Exception) {}
@@ -259,16 +331,26 @@ class LiveWallpaperService : WallpaperService() {
                     "CENTER" -> {
                         val ox = (bitmap.width * 0.3f).toInt().coerceAtLeast(1)
                         val oy = (bitmap.height * 0.3f).toInt().coerceAtLeast(1)
-                        Bitmap.createBitmap(bitmap, ox, oy, (bitmap.width - 2 * ox).coerceAtLeast(1), (bitmap.height - 2 * oy).coerceAtLeast(1))
+                        Bitmap.createBitmap(
+                            bitmap, ox, oy,
+                            (bitmap.width - 2 * ox).coerceAtLeast(1),
+                            (bitmap.height - 2 * oy).coerceAtLeast(1)
+                        )
                     }
-                    "TOP_HALF" -> Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, (bitmap.height / 2).coerceAtLeast(1))
+                    "TOP_HALF" -> Bitmap.createBitmap(
+                        bitmap, 0, 0,
+                        bitmap.width,
+                        (bitmap.height / 2).coerceAtLeast(1)
+                    )
                     "BOTTOM_HALF" -> {
                         val h = (bitmap.height / 2).coerceAtLeast(1)
                         Bitmap.createBitmap(bitmap, 0, bitmap.height - h, bitmap.width, h)
                     }
                     else -> bitmap
                 }
-            } catch (_: Exception) { bitmap }
+            } catch (_: Exception) {
+                bitmap
+            }
         }
 
         private fun releasePlayer() {

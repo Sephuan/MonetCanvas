@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -90,6 +91,7 @@ import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.TonePreference
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private sealed interface PreviewBlock {
@@ -127,6 +129,7 @@ fun PreviewScreen(
 
     var currentRule by remember { mutableStateOf<MonetRule?>(null) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var isExiting by remember { mutableStateOf(false) }
 
     val currentApplyState by rememberUpdatedState(applyState)
     val currentRuleState by rememberUpdatedState(currentRule)
@@ -140,6 +143,7 @@ fun PreviewScreen(
         )
     }
 
+    // ━━━━━ 初始化播放器 ━━━━━
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player?.release()
@@ -153,6 +157,7 @@ fun PreviewScreen(
         }
     }
 
+    // ━━━━━ 页面销毁时释放 ━━━━━
     DisposableEffect(Unit) {
         onDispose {
             player?.pause()
@@ -162,6 +167,7 @@ fun PreviewScreen(
         }
     }
 
+    // ━━━━━ 生命周期 ━━━━━
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -180,25 +186,33 @@ fun PreviewScreen(
                 else -> Unit
             }
         }
-
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // ━━━━━ 初始化规则与颜色 ━━━━━
     LaunchedEffect(wallpaper.id) {
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
         viewModel.analyzeColors(wallpaper, rule)
     }
 
+    // ━━━━━ ★ 延迟退出：等 Compose 先移除视频层 ━━━━━
+    LaunchedEffect(isExiting) {
+        if (isExiting) {
+            delay(60)
+            onBack()
+        }
+    }
+
+    // ━━━━━ ★ 安全返回：先清除视频画面，等一帧再导航 ━━━━━
     fun safeBack() {
+        player?.clearVideoSurface()
         player?.pause()
         player?.stop()
         player?.release()
         player = null
-        onBack()
+        isExiting = true
     }
 
     fun openFullScreen() {
@@ -324,6 +338,7 @@ fun PreviewScreen(
         }
     }
 
+    // ━━━━━ 设为壁纸弹窗 ━━━━━
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
@@ -347,6 +362,7 @@ fun PreviewScreen(
         )
     }
 
+    // ━━━━━ 删除弹窗 ━━━━━
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -356,6 +372,7 @@ fun PreviewScreen(
                 TextButton(
                     onClick = {
                         showDeleteDialog = false
+                        player?.clearVideoSurface()
                         player?.pause()
                         player?.stop()
                         player?.release()
@@ -374,6 +391,7 @@ fun PreviewScreen(
         )
     }
 
+    // ━━━━━ 规则弹窗 ━━━━━
     if (showRuleSheet && currentRule != null) {
         MonetRuleBottomSheet(
             rule = currentRule!!,
@@ -390,6 +408,7 @@ fun PreviewScreen(
         )
     }
 
+    // ━━━━━ 动态壁纸失败弹窗 ━━━━━
     if (liveWpResult == LiveWpResult.FAILED) {
         AlertDialog(
             onDismissRequest = { viewModel.clearLiveWpResult() },
@@ -443,6 +462,7 @@ fun PreviewScreen(
     }
 }
 
+// ━━━━━ 横幅 ━━━━━
 @Composable
 private fun ReturnBannerSection(
     visible: Boolean,
@@ -510,6 +530,7 @@ private fun ReturnBannerSection(
     }
 }
 
+// ━━━━━ 操作按钮 ━━━━━
 @Composable
 private fun PreviewActionSection(
     applyButtonAlpha: Float,
@@ -546,7 +567,6 @@ private fun PreviewActionSection(
             } else {
                 Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
             }
-
             Text(
                 " ${
                     if (isApplying) stringResource(R.string.setting_wallpaper)
@@ -557,6 +577,7 @@ private fun PreviewActionSection(
     }
 }
 
+// ━━━━━ 规则弹窗 ━━━━━
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MonetRuleBottomSheet(
@@ -581,7 +602,7 @@ private fun MonetRuleBottomSheet(
                 style = MaterialTheme.typography.headlineSmall
             )
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
             if (isLiveWallpaper) {
                 Text(
@@ -594,7 +615,7 @@ private fun MonetRuleBottomSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
 
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     FramePickPosition.entries.forEachIndexed { index, pos ->
@@ -619,7 +640,7 @@ private fun MonetRuleBottomSheet(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -643,7 +664,7 @@ private fun MonetRuleBottomSheet(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -658,7 +679,7 @@ private fun MonetRuleBottomSheet(
                 }
             }
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
             Button(
                 onClick = {
@@ -675,11 +696,12 @@ private fun MonetRuleBottomSheet(
                 Text(text = stringResource(R.string.save_and_analyze))
             }
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
 
+// ━━━━━ 设为壁纸弹窗 ━━━━━
 @Composable
 private fun ApplyWallpaperDialog(
     isLive: Boolean,

@@ -1,7 +1,12 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.sephuan.monetcanvas.ui.screens.preview
 
-import android.net.Uri
+import android.app.Activity
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -27,28 +33,32 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
 import com.sephuan.monetcanvas.data.model.WallpaperType
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun FullScreenPreview(
@@ -56,63 +66,88 @@ fun FullScreenPreview(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val systemUiController = rememberSystemUiController()
+    val activity = context as? Activity
 
     var showControls by remember { mutableStateOf(true) }
-    var isPlayerReady by remember { mutableStateOf(false) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var backProgress by remember { mutableFloatStateOf(0f) }
 
-    // ★ 沉浸模式
-    DisposableEffect(Unit) {
-        systemUiController.isSystemBarsVisible = false
-        onDispose {
-            systemUiController.isSystemBarsVisible = true
+    val animatedProgress by animateFloatAsState(
+        targetValue = backProgress,
+        animationSpec = tween(
+            durationMillis = if (backProgress == 0f) 180 else 0,
+            easing = FastOutSlowInEasing
+        ),
+        label = "predictiveBackProgress"
+    )
+
+    val scale = 1f - (animatedProgress * 0.08f)
+    val contentAlpha = 1f - (animatedProgress * 0.12f)
+    val translateX = animatedProgress * 24f
+    val horizontalPadding = (animatedProgress * 18f).dp
+    val verticalPadding = (animatedProgress * 28f).dp
+    val cornerRadius = (animatedProgress * 28f).dp
+
+    DisposableEffect(activity) {
+        val window = activity?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
         }
-    }
 
-    // ★ 初始化 ExoPlayer（仅动态壁纸）
-    LaunchedEffect(wallpaper.filePath) {
-        if (wallpaper.type == WallpaperType.LIVE) {
-            player = ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(Uri.parse("file://${wallpaper.filePath}")))
-                repeatMode = Player.REPEAT_MODE_ALL
-                volume = 0f
-
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        if (playbackState == Player.STATE_READY) {
-                            isPlayerReady = true
-                        }
-                    }
-                })
-
-                prepare()
-                playWhenReady = true
+        onDispose {
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
 
-    // ★ 页面销毁时提前释放
-    DisposableEffect(Unit) {
+    PredictiveBackHandler(enabled = true) { progress ->
+        try {
+            progress.collectLatest { event ->
+                backProgress = event.progress
+            }
+            backProgress = 1f
+            player?.run {
+                pause()
+                stop()
+                release()
+            }
+            player = null
+            onDismiss()
+        } catch (_: Throwable) {
+            backProgress = 0f
+        }
+    }
+
+    DisposableEffect(wallpaper.filePath, wallpaper.type) {
+        if (wallpaper.type == WallpaperType.LIVE) {
+            player = ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri("file://${wallpaper.filePath}".toUri()))
+                repeatMode = Player.REPEAT_MODE_ALL
+                volume = 0f
+                prepare()
+                playWhenReady = true
+            }
+        }
+
         onDispose {
-            player?.stop()
-            player?.release()
+            player?.run {
+                pause()
+                stop()
+                release()
+            }
             player = null
         }
     }
 
-    // ★ 自动隐藏控制栏
-    LaunchedEffect(showControls) {
-        if (showControls) {
-            delay(3000)
-            showControls = false
-        }
-    }
-
-    // ★ 安全退出：先释放播放器再导航
     fun safeExit() {
-        player?.stop()
-        player?.release()
+        player?.run {
+            pause()
+            stop()
+            release()
+        }
         player = null
         onDismiss()
     }
@@ -128,68 +163,81 @@ fun FullScreenPreview(
                 showControls = !showControls
             }
     ) {
-        // ━━━━━ 内容区 ━━━━━
-        when (wallpaper.type) {
-            WallpaperType.STATIC -> {
-                AsyncImage(
-                    model = wallpaper.filePath,
-                    contentDescription = wallpaper.fileName,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    horizontal = horizontalPadding,
+                    vertical = verticalPadding
                 )
-            }
-
-            WallpaperType.LIVE -> {
-                player?.let { exo ->
-                    AndroidView(
-                        factory = { ctx ->
-                            androidx.media3.ui.PlayerView(ctx).apply {
-                                useController = false
-                                this.player = exo
-                                setShutterBackgroundColor(android.graphics.Color.BLACK)
-                            }
-                        },
-                        update = { view ->
-                            if (view.player != player) {
-                                view.player = player
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = contentAlpha
+                    translationX = translateX
+                }
+                .clip(RoundedCornerShape(cornerRadius))
+                .background(Color.Black)
+        ) {
+            when (wallpaper.type) {
+                WallpaperType.STATIC -> {
+                    AsyncImage(
+                        model = wallpaper.filePath,
+                        contentDescription = wallpaper.fileName,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
                     )
+                }
+
+                WallpaperType.LIVE -> {
+                    player?.let { exoPlayer ->
+                        AndroidView(
+                            factory = { ctx ->
+                                androidx.media3.ui.PlayerView(ctx).apply {
+                                    useController = false
+                                    player = exoPlayer
+                                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                                }
+                            },
+                            update = { view ->
+                                if (view.player != exoPlayer) {
+                                    view.player = exoPlayer
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
 
-        // ━━━━━ 顶部控制栏（带动画） ━━━━━
         AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { -it },
-            exit = fadeOut(tween(250)) + slideOutVertically(tween(300)) { -it },
+            visible = showControls && animatedProgress < 0.02f,
+            enter = fadeIn(tween(250)) + slideInVertically(tween(280)) { -it / 2 },
+            exit = fadeOut(tween(180)) + slideOutVertically(tween(220)) { -it / 2 },
             modifier = Modifier.align(Alignment.TopStart)
         ) {
             Row(
-                modifier = Modifier
-                    .padding(top = 48.dp, start = 16.dp),
+                modifier = Modifier.padding(top = 48.dp, start = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledTonalIconButton(onClick = ::safeExit) {
                     Icon(
-                        Icons.Outlined.Close,
+                        imageVector = Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.close_fullscreen)
                     )
                 }
             }
         }
 
-        // ━━━━━ 底部信息栏（带动画） ━━━━━
         AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it },
-            exit = fadeOut(tween(250)) + slideOutVertically(tween(300)) { it },
+            visible = showControls && animatedProgress < 0.02f,
+            enter = fadeIn(tween(250)) + slideInVertically(tween(280)) { it / 2 },
+            exit = fadeOut(tween(180)) + slideOutVertically(tween(220)) { it / 2 },
             modifier = Modifier.align(Alignment.BottomStart)
         ) {
             Surface(
-                modifier = Modifier.padding(16.dp, bottom = 48.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 48.dp),
                 shape = MaterialTheme.shapes.medium,
                 color = Color.Black.copy(alpha = 0.55f)
             ) {
@@ -199,9 +247,10 @@ fun FullScreenPreview(
                 ) {
                     if (wallpaper.type == WallpaperType.LIVE) {
                         Icon(
-                            Icons.Outlined.PlayCircle, null,
+                            imageVector = Icons.Outlined.PlayCircle,
+                            contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = Color.White.copy(alpha = 0.8f)
+                            tint = Color.White.copy(alpha = 0.82f)
                         )
                         Spacer(Modifier.width(6.dp))
                     }
@@ -218,7 +267,7 @@ fun FullScreenPreview(
                     Text(
                         text = "${wallpaper.width} × ${wallpaper.height}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = Color.White.copy(alpha = 0.64f)
                     )
                 }
             }
