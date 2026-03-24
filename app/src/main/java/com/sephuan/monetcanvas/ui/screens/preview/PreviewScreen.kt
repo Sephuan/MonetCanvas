@@ -1,8 +1,10 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -11,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -61,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +76,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -92,6 +98,7 @@ import com.sephuan.monetcanvas.data.model.TonePreference
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 private sealed interface PreviewBlock {
@@ -131,6 +138,23 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isExiting by remember { mutableStateOf(false) }
 
+    // ━━━━━ Predictive Back ━━━━━
+    var backProgress by remember { mutableFloatStateOf(0f) }
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = backProgress,
+        animationSpec = tween(
+            durationMillis = if (backProgress == 0f) 200 else 0,
+            easing = FastOutSlowInEasing
+        ),
+        label = "previewBackProgress"
+    )
+
+    val scale = 1f - (animatedProgress * 0.06f)
+    val contentAlpha = 1f - (animatedProgress * 0.10f)
+    val translateX = animatedProgress * 80f
+    val cornerRadius = (animatedProgress * 24f).dp
+
     val currentApplyState by rememberUpdatedState(applyState)
     val currentRuleState by rememberUpdatedState(currentRule)
 
@@ -141,6 +165,26 @@ fun PreviewScreen(
             PreviewBlock.Monet,
             PreviewBlock.Actions
         )
+    }
+
+    // ━━━━━ Predictive Back Handler ━━━━━
+    PredictiveBackHandler(enabled = !isApplying && !isWaitingConfirm) { progress ->
+        try {
+            progress.collectLatest { event ->
+                backProgress = event.progress
+            }
+            // 手势提交
+            backProgress = 1f
+            player?.clearVideoSurface()
+            player?.pause()
+            player?.stop()
+            player?.release()
+            player = null
+            isExiting = true
+        } catch (_: Throwable) {
+            // 手势取消
+            backProgress = 0f
+        }
     }
 
     // ━━━━━ 初始化播放器 ━━━━━
@@ -197,7 +241,7 @@ fun PreviewScreen(
         viewModel.analyzeColors(wallpaper, rule)
     }
 
-    // ━━━━━ ★ 延迟退出：等 Compose 先移除视频层 ━━━━━
+    // ━━━━━ 延迟退出 ━━━━━
     LaunchedEffect(isExiting) {
         if (isExiting) {
             delay(60)
@@ -205,7 +249,7 @@ fun PreviewScreen(
         }
     }
 
-    // ━━━━━ ★ 安全返回：先清除视频画面，等一帧再导航 ━━━━━
+    // ━━━━━ 安全返回 ━━━━━
     fun safeBack() {
         player?.clearVideoSurface()
         player?.pause()
@@ -238,99 +282,118 @@ fun PreviewScreen(
         label = "applyAlpha"
     )
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = wallpaper.fileName,
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = ::safeBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.back)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Delete,
-                            contentDescription = stringResource(R.string.delete)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { padding ->
-        Column(
+    // ━━━━━ 页面主体 ━━━━━
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = contentAlpha
+                    translationX = translateX
+                }
+                .clip(RoundedCornerShape(cornerRadius))
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 12.dp,
-                    bottom = 32.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(
-                    items = blocks,
-                    key = { block -> block::class.simpleName ?: block.hashCode() }
-                ) { block ->
-                    when (block) {
-                        PreviewBlock.Banner -> {
-                            ReturnBannerSection(
-                                visible = showReturnBanner,
-                                analyzing = isAnalyzing,
-                                success = bannerSuccess
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = wallpaper.fileName,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.titleMedium
                             )
-                        }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = ::safeBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = stringResource(R.string.back)
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = stringResource(R.string.delete)
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
+                    )
+                }
+            ) { padding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(padding)
+                ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 12.dp,
+                            bottom = 32.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(
+                            items = blocks,
+                            key = { block -> block::class.simpleName ?: block.hashCode() }
+                        ) { block ->
+                            when (block) {
+                                PreviewBlock.Banner -> {
+                                    ReturnBannerSection(
+                                        visible = showReturnBanner,
+                                        analyzing = isAnalyzing,
+                                        success = bannerSuccess
+                                    )
+                                }
 
-                        PreviewBlock.Media -> {
-                            PreviewMediaSection(
-                                wallpaper = wallpaper,
-                                player = player,
-                                isApplying = isApplying,
-                                onFullScreenClick = ::openFullScreen
-                            )
-                        }
+                                PreviewBlock.Media -> {
+                                    PreviewMediaSection(
+                                        wallpaper = wallpaper,
+                                        player = player,
+                                        isApplying = isApplying,
+                                        onFullScreenClick = ::openFullScreen
+                                    )
+                                }
 
-                        PreviewBlock.Monet -> {
-                            PreviewMonetSection(
-                                wallpaper = wallpaper,
-                                currentRule = currentRule,
-                                extractedColors = extractedColors,
-                                isAnalyzing = isAnalyzing,
-                                onConfigClick = { showRuleSheet = true }
-                            )
-                        }
+                                PreviewBlock.Monet -> {
+                                    PreviewMonetSection(
+                                        wallpaper = wallpaper,
+                                        currentRule = currentRule,
+                                        extractedColors = extractedColors,
+                                        isAnalyzing = isAnalyzing,
+                                        onConfigClick = { showRuleSheet = true }
+                                    )
+                                }
 
-                        PreviewBlock.Actions -> {
-                            PreviewActionSection(
-                                applyButtonAlpha = applyButtonAlpha,
-                                isApplying = isApplying,
-                                isWaitingConfirm = isWaitingConfirm,
-                                onFullScreenClick = ::openFullScreen,
-                                onApplyClick = { showApplyDialog = true }
-                            )
+                                PreviewBlock.Actions -> {
+                                    PreviewActionSection(
+                                        applyButtonAlpha = applyButtonAlpha,
+                                        isApplying = isApplying,
+                                        isWaitingConfirm = isWaitingConfirm,
+                                        onFullScreenClick = ::openFullScreen,
+                                        onApplyClick = { showApplyDialog = true }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
