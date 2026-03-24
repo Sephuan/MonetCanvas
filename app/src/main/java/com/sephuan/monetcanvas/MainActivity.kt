@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -15,11 +14,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LiveTv
@@ -28,7 +25,6 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Wallpaper
-import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -37,14 +33,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -62,7 +57,6 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val TAG = "MainActivity"
         private const val PREFS_NAME = "app_first_launch"
         private const val KEY_FIRST_LAUNCH = "is_first_launch"
 
@@ -78,7 +72,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 官方建议的 edge-to-edge 入口
         enableEdgeToEdge()
+
+        // 减少三键导航下的发白 / 灰遮罩干扰
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
 
         setContent {
             val settings = remember { SettingsDataStore(applicationContext) }
@@ -99,19 +100,15 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemInDarkTheme()
             }
 
-            SideEffect {
-                val window = (context as Activity).window
-                val controller = WindowCompat.getInsetsController(window, window.decorView)
-                controller.isAppearanceLightStatusBars = !isDark
-                controller.isAppearanceLightNavigationBars = !isDark
-            }
-
             MonetCanvasTheme(
                 appSeedColor = appSeedColor,
                 appCustomColor = appCustomColor,
                 appColorMode = appColorMode,
                 darkModeSetting = darkMode
             ) {
+                // ★ 统一在 Activity 根部管理系统栏，避免页面各自乱改
+                SystemBarsEffect(isDark = isDark)
+
                 var onboardingStep by remember {
                     mutableIntStateOf(
                         if (isFirstLaunch(context)) STEP_WELCOME else STEP_NONE
@@ -120,18 +117,18 @@ class MainActivity : ComponentActivity() {
 
                 val notifPermLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission()
-                ) { _ ->
+                ) {
                     onboardingStep = STEP_LIVE_WP
                 }
 
-                // ━━━━━ 步骤1：欢迎页 ━━━━━
                 if (onboardingStep == STEP_WELCOME) {
                     WelcomeDialog(
                         onDismiss = {
                             markFirstLaunchDone(context)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 val granted = ContextCompat.checkSelfPermission(
-                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
                                 ) == PackageManager.PERMISSION_GRANTED
                                 onboardingStep = if (granted) STEP_LIVE_WP else STEP_NOTIFICATION
                             } else {
@@ -141,7 +138,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // ━━━━━ 步骤2：通知权限 ━━━━━
                 if (onboardingStep == STEP_NOTIFICATION) {
                     NotificationPermissionDialog(
                         onAllow = {
@@ -155,30 +151,21 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // ━━━━━ 步骤3：动态壁纸激活引导 ━━━━━
-                // ★ 不再尝试静默激活，直接弹窗引导用户
                 if (onboardingStep == STEP_LIVE_WP) {
                     val isActive = remember {
                         LiveWallpaperSetter.isOurLiveWallpaperActive(context)
                     }
 
                     if (isActive) {
-                        // 已经激活了，跳过
-                        Log.d(TAG, "动态壁纸服务已激活，跳过引导")
                         onboardingStep = STEP_NONE
                     } else {
-                        // ★ 未激活：直接显示引导弹窗
                         LiveWallpaperGuideDialog(
                             onGoSettings = {
-                                // ★ 跳转到本应用的系统设置详情页
                                 LiveWallpaperSetter.openAppSettings(context)
                                 onboardingStep = STEP_NONE
                             },
                             onTryActivate = {
-                                // 尝试用系统 Intent 激活
                                 LiveWallpaperSetter.tryActivate(context)
-                                // 无论成功与否都关闭弹窗
-                                // 用户确认后回来，下次打开 App 会重新检查
                                 onboardingStep = STEP_NONE
                             },
                             onSkip = {
@@ -206,7 +193,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ━━━━━ 欢迎引导弹窗 ━━━━━
+@Composable
+private fun SystemBarsEffect(isDark: Boolean) {
+    val context = LocalContext.current
+    val activity = context as? Activity ?: return
+    val window = activity.window
+    val view = window.decorView
+
+    DisposableEffect(isDark) {
+        // 背后内容自己绘制，系统栏透明
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !isDark
+        controller.isAppearanceLightNavigationBars = !isDark
+
+        onDispose { }
+    }
+}
+
 @Composable
 private fun WelcomeDialog(onDismiss: () -> Unit) {
     AlertDialog(
@@ -243,14 +249,17 @@ private fun WelcomeDialog(onDismiss: () -> Unit) {
     )
 }
 
-// ━━━━━ 通知权限弹窗 ━━━━━
 @Composable
-private fun NotificationPermissionDialog(onAllow: () -> Unit, onSkip: () -> Unit) {
+private fun NotificationPermissionDialog(
+    onAllow: () -> Unit,
+    onSkip: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onSkip,
         icon = {
             Icon(
-                Icons.Outlined.Notifications, null,
+                Icons.Outlined.Notifications,
+                contentDescription = null,
                 modifier = Modifier.size(32.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -258,15 +267,18 @@ private fun NotificationPermissionDialog(onAllow: () -> Unit, onSkip: () -> Unit
         title = { Text(stringResource(R.string.notif_perm_title)) },
         text = { Text(stringResource(R.string.notif_perm_desc)) },
         confirmButton = {
-            Button(onClick = onAllow) { Text(stringResource(R.string.notif_perm_allow)) }
+            Button(onClick = onAllow) {
+                Text(stringResource(R.string.notif_perm_allow))
+            }
         },
         dismissButton = {
-            TextButton(onClick = onSkip) { Text(stringResource(R.string.notif_perm_skip)) }
+            TextButton(onClick = onSkip) {
+                Text(stringResource(R.string.notif_perm_skip))
+            }
         }
     )
 }
 
-// ━━━━━ ★ 动态壁纸激活引导弹窗（首次 + 预览页共用逻辑） ━━━━━
 @Composable
 private fun LiveWallpaperGuideDialog(
     onGoSettings: () -> Unit,
@@ -277,7 +289,8 @@ private fun LiveWallpaperGuideDialog(
         onDismissRequest = onSkip,
         icon = {
             Icon(
-                Icons.Outlined.Wallpaper, null,
+                Icons.Outlined.Wallpaper,
+                contentDescription = null,
                 modifier = Modifier.size(32.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -298,27 +311,22 @@ private fun LiveWallpaperGuideDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // ★ 尝试系统 Intent 激活
                 Button(
                     onClick = onTryActivate,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(stringResource(R.string.live_wp_setup_enable))
+                    Text(" " + stringResource(R.string.live_wp_setup_enable))
                 }
 
-                // ★ 跳转到应用设置详情页
                 OutlinedButton(
                     onClick = onGoSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(stringResource(R.string.live_wp_perm_go_settings))
+                    Text(" " + stringResource(R.string.live_wp_perm_go_settings))
                 }
 
-                // 稍后
                 TextButton(
                     onClick = onSkip,
                     modifier = Modifier.fillMaxWidth()
@@ -331,14 +339,20 @@ private fun LiveWallpaperGuideDialog(
 }
 
 @Composable
-private fun FeatureRow(icon: ImageVector, text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
+private fun FeatureRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String
+) {
+    androidx.compose.foundation.layout.Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Icon(icon, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
         Spacer(Modifier.size(10.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium)
     }

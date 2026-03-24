@@ -1,21 +1,23 @@
 package com.sephuan.monetcanvas.ui.theme
 
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.sephuan.monetcanvas.data.datastore.SettingsDataStore
 
-/**
- * 预设颜色方案（用户可在设置里选）
- */
 data class PresetColor(
     val name: String,
     val colorInt: Int,
@@ -42,67 +44,147 @@ private fun generateSchemeFromSeed(seedColor: Int, isDark: Boolean): ColorScheme
     val hue = hsv[0]
     val sat = hsv[1]
 
-    val hue2 = (hue + 30f) % 360f
+    val hue2 = (hue + 28f) % 360f
     val hue3 = (hue + 330f) % 360f
 
     fun c(h: Float, s: Float, v: Float): Color {
-        val color = android.graphics.Color.HSVToColor(floatArrayOf(h, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f)))
+        val color = android.graphics.Color.HSVToColor(
+            floatArrayOf(h, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f))
+        )
         return Color(color)
     }
 
     return if (isDark) {
+        val background = Color(0xFF101114)
+        val surface = Color(0xFF15171B)
+        val surfaceVariant = Color(0xFF23262D)
+
         darkColorScheme(
-            primary = c(hue, sat, 0.75f),
-            onPrimary = c(hue, sat * 0.3f, 0.1f),
-            primaryContainer = c(hue, sat * 0.5f, 0.25f),
-            onPrimaryContainer = c(hue, sat * 0.3f, 0.9f),
+            primary = c(hue, sat * 0.75f, 0.82f),
+            onPrimary = Color(0xFF101114),
+            primaryContainer = c(hue, sat * 0.45f, 0.30f),
+            onPrimaryContainer = c(hue, sat * 0.18f, 0.96f),
 
-            secondary = c(hue2, sat * 0.6f, 0.7f),
-            onSecondary = c(hue2, sat * 0.3f, 0.1f),
-            secondaryContainer = c(hue2, sat * 0.3f, 0.2f),
-            onSecondaryContainer = c(hue2, sat * 0.3f, 0.85f),
+            secondary = c(hue2, sat * 0.55f, 0.76f),
+            onSecondary = Color(0xFF101114),
+            secondaryContainer = c(hue2, sat * 0.28f, 0.26f),
+            onSecondaryContainer = c(hue2, sat * 0.15f, 0.93f),
 
-            tertiary = c(hue3, sat * 0.6f, 0.7f),
-            onTertiary = c(hue3, sat * 0.3f, 0.1f),
-            tertiaryContainer = c(hue3, sat * 0.3f, 0.2f),
-            onTertiaryContainer = c(hue3, sat * 0.3f, 0.85f),
+            tertiary = c(hue3, sat * 0.50f, 0.76f),
+            onTertiary = Color(0xFF101114),
+            tertiaryContainer = c(hue3, sat * 0.25f, 0.26f),
+            onTertiaryContainer = c(hue3, sat * 0.15f, 0.93f),
 
-            background = Color(0xFF121212),
-            onBackground = Color(0xFFE0E0E0),
-            surface = Color(0xFF1E1E1E),
-            onSurface = Color(0xFFE0E0E0),
-            surfaceVariant = Color(0xFF2C2C2C),
-            onSurfaceVariant = Color(0xFFCACACA),
-            surfaceContainerHigh = Color(0xFF2A2A2A),
-            outline = Color(0xFF888888),
-            outlineVariant = Color(0xFF444444)
+            background = background,
+            onBackground = Color(0xFFE7EAF0),
+            surface = surface,
+            onSurface = Color(0xFFE7EAF0),
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = Color(0xFFC3C7D0),
+            surfaceContainer = surface,
+            surfaceContainerLow = Color(0xFF121418),
+            surfaceContainerHigh = Color(0xFF1C1F25),
+            surfaceContainerHighest = Color(0xFF252932),
+            outline = Color(0xFF8B909A),
+            outlineVariant = Color(0xFF3A3E47)
+        )
+    } else {
+        val background = Color(0xFFF7F8FC)
+        val surface = Color(0xFFFCFCFF)
+        val surfaceVariant = Color(0xFFE6E8F0)
+
+        lightColorScheme(
+            primary = c(hue, sat * 0.82f, 0.55f),
+            onPrimary = Color.White,
+            primaryContainer = c(hue, sat * 0.22f, 0.95f),
+            onPrimaryContainer = c(hue, sat * 0.75f, 0.22f),
+
+            secondary = c(hue2, sat * 0.55f, 0.52f),
+            onSecondary = Color.White,
+            secondaryContainer = c(hue2, sat * 0.18f, 0.94f),
+            onSecondaryContainer = c(hue2, sat * 0.55f, 0.22f),
+
+            tertiary = c(hue3, sat * 0.52f, 0.52f),
+            onTertiary = Color.White,
+            tertiaryContainer = c(hue3, sat * 0.18f, 0.94f),
+            onTertiaryContainer = c(hue3, sat * 0.52f, 0.22f),
+
+            background = background,
+            onBackground = Color(0xFF171C24),
+            surface = surface,
+            onSurface = Color(0xFF171C24),
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = Color(0xFF464B57),
+            surfaceContainer = surface,
+            surfaceContainerLow = Color(0xFFF4F6FA),
+            surfaceContainerHigh = Color(0xFFEEF1F7),
+            surfaceContainerHighest = Color(0xFFE7EBF3),
+            outline = Color(0xFF757B87),
+            outlineVariant = Color(0xFFC7CCD6)
+        )
+    }
+}
+
+private fun fallbackScheme(isDark: Boolean): ColorScheme {
+    return if (isDark) {
+        darkColorScheme(
+            primary = Color(0xFFAAC7FF),
+            onPrimary = Color(0xFF0A305F),
+            primaryContainer = Color(0xFF224777),
+            onPrimaryContainer = Color(0xFFD6E3FF),
+
+            secondary = Color(0xFFBEC6DC),
+            onSecondary = Color(0xFF283141),
+            secondaryContainer = Color(0xFF3E4758),
+            onSecondaryContainer = Color(0xFFDAE2F9),
+
+            tertiary = Color(0xFFDDBCE0),
+            onTertiary = Color(0xFF402843),
+            tertiaryContainer = Color(0xFF583E5A),
+            onTertiaryContainer = Color(0xFFFAD8FD),
+
+            background = Color(0xFF101114),
+            onBackground = Color(0xFFE7EAF0),
+            surface = Color(0xFF15171B),
+            onSurface = Color(0xFFE7EAF0),
+            surfaceVariant = Color(0xFF23262D),
+            onSurfaceVariant = Color(0xFFC3C7D0),
+            surfaceContainer = Color(0xFF15171B),
+            surfaceContainerLow = Color(0xFF121418),
+            surfaceContainerHigh = Color(0xFF1C1F25),
+            surfaceContainerHighest = Color(0xFF252932),
+            outline = Color(0xFF8B909A),
+            outlineVariant = Color(0xFF3A3E47)
         )
     } else {
         lightColorScheme(
-            primary = c(hue, sat, 0.45f),
+            primary = Color(0xFF3E63DD),
             onPrimary = Color.White,
-            primaryContainer = c(hue, sat * 0.4f, 0.92f),
-            onPrimaryContainer = c(hue, sat, 0.15f),
+            primaryContainer = Color(0xFFDEE7FF),
+            onPrimaryContainer = Color(0xFF001A41),
 
-            secondary = c(hue2, sat * 0.5f, 0.45f),
+            secondary = Color(0xFF566177),
             onSecondary = Color.White,
-            secondaryContainer = c(hue2, sat * 0.25f, 0.92f),
-            onSecondaryContainer = c(hue2, sat * 0.5f, 0.15f),
+            secondaryContainer = Color(0xFFD9E2F9),
+            onSecondaryContainer = Color(0xFF131C2B),
 
-            tertiary = c(hue3, sat * 0.5f, 0.45f),
+            tertiary = Color(0xFF705574),
             onTertiary = Color.White,
-            tertiaryContainer = c(hue3, sat * 0.25f, 0.92f),
-            onTertiaryContainer = c(hue3, sat * 0.5f, 0.15f),
+            tertiaryContainer = Color(0xFFFAD8FD),
+            onTertiaryContainer = Color(0xFF29132E),
 
-            background = Color(0xFFFFFBFE),
-            onBackground = Color(0xFF1C1B1F),
-            surface = Color(0xFFFFFBFE),
-            onSurface = Color(0xFF1C1B1F),
-            surfaceVariant = Color(0xFFE7E0EC),
-            onSurfaceVariant = Color(0xFF49454F),
-            surfaceContainerHigh = Color(0xFFF0F0F0),
-            outline = Color(0xFF79747E),
-            outlineVariant = Color(0xFFCAC4D0)
+            background = Color(0xFFF7F8FC),
+            onBackground = Color(0xFF171C24),
+            surface = Color(0xFFFCFCFF),
+            onSurface = Color(0xFF171C24),
+            surfaceVariant = Color(0xFFE6E8F0),
+            onSurfaceVariant = Color(0xFF464B57),
+            surfaceContainer = Color(0xFFFCFCFF),
+            surfaceContainerLow = Color(0xFFF4F6FA),
+            surfaceContainerHigh = Color(0xFFEEF1F7),
+            surfaceContainerHighest = Color(0xFFE7EBF3),
+            outline = Color(0xFF757B87),
+            outlineVariant = Color(0xFFC7CCD6)
         )
     }
 }
@@ -123,37 +205,47 @@ fun MonetCanvasTheme(
         else -> isSystemInDarkTheme()
     }
 
-    val colorScheme: ColorScheme = when (appColorMode) {
-        // 用户手选颜色
+    val colorScheme = when (appColorMode) {
         SettingsDataStore.COLOR_MODE_CUSTOM -> {
-            val seed = appCustomColor ?: PRESET_COLORS[0].colorInt
+            val seed = appCustomColor ?: PRESET_COLORS.first().colorInt
             generateSchemeFromSeed(seed, isDark)
         }
 
-        // 按取色规则
         SettingsDataStore.COLOR_MODE_RULE -> {
             if (appSeedColor != null) {
                 generateSchemeFromSeed(appSeedColor, isDark)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             } else {
-                if (isDark) darkColorScheme() else lightColorScheme()
+                fallbackScheme(isDark)
             }
         }
 
-        // Monet 跟随系统
         else -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             } else {
-                if (isDark) darkColorScheme() else lightColorScheme()
+                fallbackScheme(isDark)
             }
         }
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+        typography = Typography
+    ) {
+        // ★ 关键：整个 App 根节点统一填充背景色，避免转场露白
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = colorScheme.background
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colorScheme.background)
+            ) {
+                content()
+            }
+        }
+    }
 }
