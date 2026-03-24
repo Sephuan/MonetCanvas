@@ -10,21 +10,33 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -40,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,6 +69,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
+import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import kotlinx.coroutines.delay
@@ -64,7 +78,7 @@ import kotlinx.coroutines.launch
 
 private sealed interface PreviewBlock {
     data object Banner : PreviewBlock
-    data object Media : PreviewBlock
+    data object MediaPager : PreviewBlock
     data object Monet : PreviewBlock
     data object Actions : PreviewBlock
 }
@@ -99,6 +113,9 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isExiting by remember { mutableStateOf(false) }
 
+    // ━━━━━ 图片调整参数（仅静态壁纸使用）━━━━━
+    var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
+
     // ━━━━━ Predictive Back ━━━━━
     var backProgress by remember { mutableFloatStateOf(0f) }
 
@@ -122,7 +139,7 @@ fun PreviewScreen(
     val blocks = remember {
         mutableStateListOf<PreviewBlock>(
             PreviewBlock.Banner,
-            PreviewBlock.Media,
+            PreviewBlock.MediaPager,
             PreviewBlock.Monet,
             PreviewBlock.Actions
         )
@@ -241,6 +258,8 @@ fun PreviewScreen(
         label = "applyAlpha"
     )
 
+    val isStatic = wallpaper.type == WallpaperType.STATIC
+
     // ━━━━━ 页面主体 ━━━━━
     Box(
         modifier = Modifier
@@ -324,13 +343,24 @@ fun PreviewScreen(
                                     )
                                 }
 
-                                PreviewBlock.Media -> {
-                                    PreviewMediaSection(
-                                        wallpaper = wallpaper,
-                                        player = player,
-                                        isApplying = isApplying,
-                                        onFullScreenClick = ::openFullScreen
-                                    )
+                                PreviewBlock.MediaPager -> {
+                                    if (isStatic) {
+                                        StaticMediaPager(
+                                            wallpaper = wallpaper,
+                                            player = player,
+                                            isApplying = isApplying,
+                                            adjustment = imageAdjustment,
+                                            onAdjustmentChange = { imageAdjustment = it },
+                                            onFullScreenClick = ::openFullScreen
+                                        )
+                                    } else {
+                                        PreviewMediaSection(
+                                            wallpaper = wallpaper,
+                                            player = player,
+                                            isApplying = isApplying,
+                                            onFullScreenClick = ::openFullScreen
+                                        )
+                                    }
                                 }
 
                                 PreviewBlock.Monet -> {
@@ -417,5 +447,102 @@ fun PreviewScreen(
                 com.sephuan.monetcanvas.util.LiveWallpaperSetter.tryActivate(context)
             }
         )
+    }
+}
+
+// ━━━━━ 静态壁纸：预览 + 编辑 左右滑动 ━━━━━
+
+@Composable
+private fun StaticMediaPager(
+    wallpaper: WallpaperEntity,
+    player: ExoPlayer?,
+    isApplying: Boolean,
+    adjustment: ImageAdjustment,
+    onAdjustmentChange: (ImageAdjustment) -> Unit,
+    onFullScreenClick: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // ━━━━━ 标签栏 ━━━━━
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+            indicator = { tabPositions ->
+                if (pagerState.currentPage < tabPositions.size) {
+                    TabRowDefaults.PrimaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                        width = 40.dp,
+                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                    )
+                }
+            }
+        ) {
+            Tab(
+                selected = pagerState.currentPage == 0,
+                onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("预览")
+                    }
+                }
+            )
+            Tab(
+                selected = pagerState.currentPage == 1,
+                onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("调整")
+                    }
+                }
+            )
+        }
+
+        // ━━━━━ 左右滑动页面 ━━━━━
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            beyondViewportPageCount = 1,
+            userScrollEnabled = true
+        ) { page ->
+            when (page) {
+                0 -> {
+                    // 预览页：带调整参数渲染
+                    PreviewMediaSection(
+                        wallpaper = wallpaper,
+                        player = player,
+                        isApplying = isApplying,
+                        onFullScreenClick = onFullScreenClick,
+                        adjustment = adjustment,
+                        onAdjustmentChange = onAdjustmentChange
+                    )
+                }
+
+                1 -> {
+                    // 编辑页：滑块和选项
+                    PreviewImageEditSection(
+                        adjustment = adjustment,
+                        onAdjustmentChange = onAdjustmentChange
+                    )
+                }
+            }
+        }
     }
 }
