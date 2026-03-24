@@ -1,5 +1,7 @@
 package com.sephuan.monetcanvas.ui.theme
 
+import android.app.Activity
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -13,9 +15,12 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowCompat
 import com.sephuan.monetcanvas.data.datastore.SettingsDataStore
 
 data class PresetColor(
@@ -40,48 +45,42 @@ val PRESET_COLORS = listOf(
 private fun generateSchemeFromSeed(seedColor: Int, isDark: Boolean): ColorScheme {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(seedColor, hsv)
-
     val hue = hsv[0]
     val sat = hsv[1]
-
     val hue2 = (hue + 28f) % 360f
     val hue3 = (hue + 330f) % 360f
 
     fun c(h: Float, s: Float, v: Float): Color {
-        val color = android.graphics.Color.HSVToColor(
-            floatArrayOf(h, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f))
+        return Color(
+            android.graphics.Color.HSVToColor(
+                floatArrayOf(h, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f))
+            )
         )
-        return Color(color)
     }
 
     return if (isDark) {
-        val background = Color(0xFF101114)
-        val surface = Color(0xFF15171B)
-        val surfaceVariant = Color(0xFF23262D)
-
+        val bg = Color(0xFF101114)
+        val sf = Color(0xFF15171B)
         darkColorScheme(
             primary = c(hue, sat * 0.75f, 0.82f),
             onPrimary = Color(0xFF101114),
             primaryContainer = c(hue, sat * 0.45f, 0.30f),
             onPrimaryContainer = c(hue, sat * 0.18f, 0.96f),
-
             secondary = c(hue2, sat * 0.55f, 0.76f),
             onSecondary = Color(0xFF101114),
             secondaryContainer = c(hue2, sat * 0.28f, 0.26f),
             onSecondaryContainer = c(hue2, sat * 0.15f, 0.93f),
-
             tertiary = c(hue3, sat * 0.50f, 0.76f),
             onTertiary = Color(0xFF101114),
             tertiaryContainer = c(hue3, sat * 0.25f, 0.26f),
             onTertiaryContainer = c(hue3, sat * 0.15f, 0.93f),
-
-            background = background,
+            background = bg,
             onBackground = Color(0xFFE7EAF0),
-            surface = surface,
+            surface = sf,
             onSurface = Color(0xFFE7EAF0),
-            surfaceVariant = surfaceVariant,
+            surfaceVariant = Color(0xFF23262D),
             onSurfaceVariant = Color(0xFFC3C7D0),
-            surfaceContainer = surface,
+            surfaceContainer = sf,
             surfaceContainerLow = Color(0xFF121418),
             surfaceContainerHigh = Color(0xFF1C1F25),
             surfaceContainerHighest = Color(0xFF252932),
@@ -89,33 +88,28 @@ private fun generateSchemeFromSeed(seedColor: Int, isDark: Boolean): ColorScheme
             outlineVariant = Color(0xFF3A3E47)
         )
     } else {
-        val background = Color(0xFFF7F8FC)
-        val surface = Color(0xFFFCFCFF)
-        val surfaceVariant = Color(0xFFE6E8F0)
-
+        val bg = Color(0xFFF7F8FC)
+        val sf = Color(0xFFFCFCFF)
         lightColorScheme(
             primary = c(hue, sat * 0.82f, 0.55f),
             onPrimary = Color.White,
             primaryContainer = c(hue, sat * 0.22f, 0.95f),
             onPrimaryContainer = c(hue, sat * 0.75f, 0.22f),
-
             secondary = c(hue2, sat * 0.55f, 0.52f),
             onSecondary = Color.White,
             secondaryContainer = c(hue2, sat * 0.18f, 0.94f),
             onSecondaryContainer = c(hue2, sat * 0.55f, 0.22f),
-
             tertiary = c(hue3, sat * 0.52f, 0.52f),
             onTertiary = Color.White,
             tertiaryContainer = c(hue3, sat * 0.18f, 0.94f),
             onTertiaryContainer = c(hue3, sat * 0.52f, 0.22f),
-
-            background = background,
+            background = bg,
             onBackground = Color(0xFF171C24),
-            surface = surface,
+            surface = sf,
             onSurface = Color(0xFF171C24),
-            surfaceVariant = surfaceVariant,
+            surfaceVariant = Color(0xFFE6E8F0),
             onSurfaceVariant = Color(0xFF464B57),
-            surfaceContainer = surface,
+            surfaceContainer = sf,
             surfaceContainerLow = Color(0xFFF4F6FA),
             surfaceContainerHigh = Color(0xFFEEF1F7),
             surfaceContainerHighest = Color(0xFFE7EBF3),
@@ -132,17 +126,14 @@ private fun fallbackScheme(isDark: Boolean): ColorScheme {
             onPrimary = Color(0xFF0A305F),
             primaryContainer = Color(0xFF224777),
             onPrimaryContainer = Color(0xFFD6E3FF),
-
             secondary = Color(0xFFBEC6DC),
             onSecondary = Color(0xFF283141),
             secondaryContainer = Color(0xFF3E4758),
             onSecondaryContainer = Color(0xFFDAE2F9),
-
             tertiary = Color(0xFFDDBCE0),
             onTertiary = Color(0xFF402843),
             tertiaryContainer = Color(0xFF583E5A),
             onTertiaryContainer = Color(0xFFFAD8FD),
-
             background = Color(0xFF101114),
             onBackground = Color(0xFFE7EAF0),
             surface = Color(0xFF15171B),
@@ -162,17 +153,14 @@ private fun fallbackScheme(isDark: Boolean): ColorScheme {
             onPrimary = Color.White,
             primaryContainer = Color(0xFFDEE7FF),
             onPrimaryContainer = Color(0xFF001A41),
-
             secondary = Color(0xFF566177),
             onSecondary = Color.White,
             secondaryContainer = Color(0xFFD9E2F9),
             onSecondaryContainer = Color(0xFF131C2B),
-
             tertiary = Color(0xFF705574),
             onTertiary = Color.White,
             tertiaryContainer = Color(0xFFFAD8FD),
             onTertiaryContainer = Color(0xFF29132E),
-
             background = Color(0xFFF7F8FC),
             onBackground = Color(0xFF171C24),
             surface = Color(0xFFFCFCFF),
@@ -210,7 +198,6 @@ fun MonetCanvasTheme(
             val seed = appCustomColor ?: PRESET_COLORS.first().colorInt
             generateSchemeFromSeed(seed, isDark)
         }
-
         SettingsDataStore.COLOR_MODE_RULE -> {
             if (appSeedColor != null) {
                 generateSchemeFromSeed(appSeedColor, isDark)
@@ -220,7 +207,6 @@ fun MonetCanvasTheme(
                 fallbackScheme(isDark)
             }
         }
-
         else -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -230,11 +216,26 @@ fun MonetCanvasTheme(
         }
     }
 
+    val bgArgb = colorScheme.background.toArgb()
+
+    DisposableEffect(bgArgb, isDark) {
+        val activity = context as? Activity
+        activity?.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(bgArgb))
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !isDark
+            controller.isAppearanceLightNavigationBars = !isDark
+        }
+        onDispose { }
+    }
+
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography
     ) {
-        // ★ 关键：整个 App 根节点统一填充背景色，避免转场露白
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = colorScheme.background
