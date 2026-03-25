@@ -18,17 +18,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Flip
 import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,254 +49,215 @@ fun PreviewImageEditSection(
     onAdjustmentChange: (ImageAdjustment) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        // ━━━━━ 重置按钮 ━━━━━
+        AnimatedVisibility(
+            visible = adjustment.hasAnyAdjustment,
+            enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
         ) {
-            // ━━━━━ 标题 + 重置 ━━━━━
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.End
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Flip,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "图片调整",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.weight(1f))
-
-                AnimatedVisibility(
-                    visible = adjustment.hasAnyAdjustment,
-                    enter = fadeIn(tween(200)),
-                    exit = fadeOut(tween(200))
+                TextButton(
+                    onClick = { onAdjustmentChange(ImageAdjustment.DEFAULT) }
                 ) {
-                    TextButton(
-                        onClick = { onAdjustmentChange(ImageAdjustment.DEFAULT) }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.RestartAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("重置")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ━━━━━ 1. 填充方式 ━━━━━
-            Text(
-                text = "填充方式",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FillModeChip(
-                    label = "覆盖",
-                    description = "左右移动",
-                    selected = adjustment.fillMode == FillMode.COVER,
-                    onClick = {
-                        onAdjustmentChange(
-                            adjustment.copy(
-                                fillMode = FillMode.COVER,
-                                offsetX = 0f,
-                                offsetY = 0f,
-                                scale = 1f
-                            )
-                        )
-                    }
-                )
-                FillModeChip(
-                    label = "填充",
-                    description = "上下移动",
-                    selected = adjustment.fillMode == FillMode.FIT,
-                    onClick = {
-                        onAdjustmentChange(
-                            adjustment.copy(
-                                fillMode = FillMode.FIT,
-                                offsetX = 0f,
-                                offsetY = 0f,
-                                scale = 1f
-                            )
-                        )
-                    }
-                )
-                FillModeChip(
-                    label = "自由",
-                    description = "缩放+移动",
-                    selected = adjustment.fillMode == FillMode.FREE,
-                    onClick = {
-                        onAdjustmentChange(
-                            adjustment.copy(
-                                fillMode = FillMode.FREE,
-                                offsetX = 0f,
-                                offsetY = 0f,
-                                scale = 1f
-                            )
-                        )
-                    }
-                )
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-            // ━━━━━ 2. 镜像翻转 ━━━━━
-            Text(
-                text = "镜像翻转",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "水平翻转",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = adjustment.mirrorHorizontal,
-                    onCheckedChange = {
-                        onAdjustmentChange(adjustment.copy(mirrorHorizontal = it))
-                    }
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "垂直翻转",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = adjustment.mirrorVertical,
-                    onCheckedChange = {
-                        onAdjustmentChange(adjustment.copy(mirrorVertical = it))
-                    }
-                )
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-            // ━━━━━ 3. 色彩调整 ━━━━━
-            Text(
-                text = "色彩调整",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-
-            AdjustSlider(
-                label = "亮度",
-                value = adjustment.brightness,
-                onValueChange = {
-                    onAdjustmentChange(adjustment.copy(brightness = it))
-                }
-            )
-
-            AdjustSlider(
-                label = "对比度",
-                value = adjustment.contrast,
-                onValueChange = {
-                    onAdjustmentChange(adjustment.copy(contrast = it))
-                }
-            )
-
-            AdjustSlider(
-                label = "饱和度",
-                value = adjustment.saturation,
-                onValueChange = {
-                    onAdjustmentChange(adjustment.copy(saturation = it))
-                }
-            )
-
-            // ━━━━━ 4. 背景色（仅 FIT 模式） ━━━━━
-            AnimatedVisibility(
-                visible = adjustment.fillMode == FillMode.FIT,
-                enter = expandVertically(tween(250)) + fadeIn(tween(250)),
-                exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
-            ) {
-                Column {
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                    Text(
-                        text = "背景色",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = Icons.Outlined.RestartAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Text(
-                        text = "填充模式下，图片未覆盖区域的颜色",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("重置全部")
+                }
+            }
+        }
 
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        ImageAdjustment.BACKGROUND_COLORS.forEach { color ->
-                            val isSelected = adjustment.backgroundColor == color
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .then(
-                                        if (isSelected) {
-                                            Modifier.border(
-                                                3.dp,
-                                                MaterialTheme.colorScheme.primary,
-                                                CircleShape
-                                            )
-                                        } else {
-                                            Modifier.border(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.outlineVariant,
-                                                CircleShape
-                                            )
-                                        }
-                                    )
-                                    .clickable {
-                                        onAdjustmentChange(
-                                            adjustment.copy(backgroundColor = color)
+        // ━━━━━ 1. 填充方式 ━━━━━
+        SectionLabel("填充方式")
+        Spacer(Modifier.height(6.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FillModeChip(
+                label = "覆盖",
+                hint = "左右移动",
+                selected = adjustment.fillMode == FillMode.COVER,
+                onClick = {
+                    onAdjustmentChange(
+                        adjustment.copy(
+                            fillMode = FillMode.COVER,
+                            offsetX = 0f,
+                            offsetY = 0f,
+                            scale = 1f
+                        )
+                    )
+                }
+            )
+            FillModeChip(
+                label = "填充",
+                hint = "上下移动",
+                selected = adjustment.fillMode == FillMode.FIT,
+                onClick = {
+                    onAdjustmentChange(
+                        adjustment.copy(
+                            fillMode = FillMode.FIT,
+                            offsetX = 0f,
+                            offsetY = 0f,
+                            scale = 1f
+                        )
+                    )
+                }
+            )
+            FillModeChip(
+                label = "自由",
+                hint = "缩放+移动",
+                selected = adjustment.fillMode == FillMode.FREE,
+                onClick = {
+                    onAdjustmentChange(
+                        adjustment.copy(
+                            fillMode = FillMode.FREE,
+                            offsetX = 0f,
+                            offsetY = 0f,
+                            scale = 1f
+                        )
+                    )
+                }
+            )
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = when (adjustment.fillMode) {
+                FillMode.COVER -> "在壁纸上左右滑动调整位置"
+                FillMode.FIT -> "在壁纸上上下滑动调整位置"
+                FillMode.FREE -> "在壁纸上双指缩放、单指拖动"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+        ))
+        Spacer(Modifier.height(12.dp))
+
+        // ━━━━━ 2. 镜像翻转 ━━━━━
+        SectionLabel("镜像翻转")
+        Spacer(Modifier.height(4.dp))
+
+        MirrorRow(
+            label = "水平翻转",
+            checked = adjustment.mirrorHorizontal,
+            onCheckedChange = {
+                onAdjustmentChange(adjustment.copy(mirrorHorizontal = it))
+            }
+        )
+
+        MirrorRow(
+            label = "垂直翻转",
+            checked = adjustment.mirrorVertical,
+            onCheckedChange = {
+                onAdjustmentChange(adjustment.copy(mirrorVertical = it))
+            }
+        )
+
+        HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+        ))
+        Spacer(Modifier.height(12.dp))
+
+        // ━━━━━ 3. 色彩调整 ━━━━━
+        SectionLabel("色彩调整")
+        Spacer(Modifier.height(4.dp))
+
+        AdjustSlider(
+            label = "亮度",
+            value = adjustment.brightness,
+            onValueChange = {
+                onAdjustmentChange(adjustment.copy(brightness = it))
+            }
+        )
+
+        AdjustSlider(
+            label = "对比度",
+            value = adjustment.contrast,
+            onValueChange = {
+                onAdjustmentChange(adjustment.copy(contrast = it))
+            }
+        )
+
+        AdjustSlider(
+            label = "饱和度",
+            value = adjustment.saturation,
+            onValueChange = {
+                onAdjustmentChange(adjustment.copy(saturation = it))
+            }
+        )
+
+        // ━━━━━ 4. 背景色（仅 FIT 模式） ━━━━━
+        AnimatedVisibility(
+            visible = adjustment.fillMode == FillMode.FIT,
+            enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+            exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
+        ) {
+            Column {
+                HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                ))
+                Spacer(Modifier.height(12.dp))
+
+                SectionLabel("背景色")
+                Text(
+                    text = "图片未覆盖区域的颜色",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ImageAdjustment.BACKGROUND_COLORS.forEach { color ->
+                        val isSelected = adjustment.backgroundColor == color
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(
+                                            3.dp,
+                                            MaterialTheme.colorScheme.primary,
+                                            CircleShape
                                         )
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = if (color == Color.White) Color.Black
-                                        else Color.White
+                                    } else {
+                                        Modifier.border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant,
+                                            CircleShape
+                                        )
+                                    }
+                                )
+                                .clickable {
+                                    onAdjustmentChange(
+                                        adjustment.copy(backgroundColor = color)
                                     )
-                                }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (color == Color.White) Color.Black
+                                    else Color.White
+                                )
                             }
                         }
                     }
@@ -311,10 +267,21 @@ fun PreviewImageEditSection(
     }
 }
 
+// ━━━━━ 通用组件 ━━━━━
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
 @Composable
 private fun FillModeChip(
     label: String,
-    description: String,
+    hint: String,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -328,13 +295,36 @@ private fun FillModeChip(
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text(
-                    text = description,
+                    text = hint,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     )
+}
+
+@Composable
+private fun MirrorRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+    }
 }
 
 @Composable
@@ -350,6 +340,7 @@ private fun AdjustSlider(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.width(56.dp)
         )
 

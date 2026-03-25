@@ -2,133 +2,72 @@
 
 package com.sephuan.monetcanvas.ui.screens.preview
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Fullscreen
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
-import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
 import com.sephuan.monetcanvas.data.model.FillMode
 import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.WallpaperType
 
+/**
+ * 全屏壁纸背景层
+ * 静态壁纸：支持调整参数 + 触屏手势
+ * 动态壁纸：全屏视频播放
+ */
 @Composable
 fun PreviewMediaSection(
     wallpaper: WallpaperEntity,
     player: ExoPlayer?,
-    isApplying: Boolean,
-    onFullScreenClick: () -> Unit,
     modifier: Modifier = Modifier,
-    adjustment: ImageAdjustment? = null,
+    adjustment: ImageAdjustment = ImageAdjustment.DEFAULT,
     onAdjustmentChange: ((ImageAdjustment) -> Unit)? = null
 ) {
-    val adj = adjustment ?: ImageAdjustment.DEFAULT
-
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(9f / 16f)
-            .clip(RoundedCornerShape(22.dp))
+            .fillMaxSize()
             .background(
-                if (wallpaper.type == WallpaperType.STATIC && adj.fillMode == FillMode.FIT) {
-                    adj.backgroundColor
+                if (wallpaper.type == WallpaperType.STATIC && adjustment.fillMode == FillMode.FIT) {
+                    adjustment.backgroundColor
                 } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
+                    Color.Black
                 }
             )
     ) {
-        if (wallpaper.type == WallpaperType.STATIC) {
-            StaticImageContent(
-                wallpaper = wallpaper,
-                adjustment = adj,
-                onAdjustmentChange = onAdjustmentChange
-            )
-        } else {
-            VideoContent(player = player)
-        }
+        when (wallpaper.type) {
+            WallpaperType.STATIC -> {
+                StaticWallpaperLayer(
+                    wallpaper = wallpaper,
+                    adjustment = adjustment,
+                    onAdjustmentChange = onAdjustmentChange
+                )
+            }
 
-        // 全屏按钮
-        FilledTonalIconButton(
-            onClick = onFullScreenClick,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(12.dp)
-        ) {
-            Icon(
-                Icons.Outlined.Fullscreen,
-                contentDescription = stringResource(R.string.fullscreen_preview)
-            )
-        }
-
-        // 设置中遮罩
-        AnimatedVisibility(
-            visible = isApplying,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(180)),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.30f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.setting_wallpaper),
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+            WallpaperType.LIVE -> {
+                VideoWallpaperLayer(player = player)
             }
         }
     }
 }
 
-// ━━━━━ 静态图片内容（支持调整 + 手势）━━━━━
+// ━━━━━ 静态壁纸全屏层 ━━━━━
 
 @Composable
-private fun StaticImageContent(
+private fun StaticWallpaperLayer(
     wallpaper: WallpaperEntity,
     adjustment: ImageAdjustment,
     onAdjustmentChange: ((ImageAdjustment) -> Unit)?
@@ -143,6 +82,7 @@ private fun StaticImageContent(
 
     val gestureModifier = when {
         onAdjustmentChange == null -> Modifier
+
         adjustment.fillMode == FillMode.FREE -> {
             Modifier.pointerInput(adjustment.fillMode) {
                 detectTransformGestures { _, pan, zoom, _ ->
@@ -157,6 +97,7 @@ private fun StaticImageContent(
                 }
             }
         }
+
         adjustment.fillMode == FillMode.COVER -> {
             Modifier.pointerInput(adjustment.fillMode) {
                 detectDragGestures { _, dragAmount ->
@@ -168,6 +109,7 @@ private fun StaticImageContent(
                 }
             }
         }
+
         adjustment.fillMode == FillMode.FIT -> {
             Modifier.pointerInput(adjustment.fillMode) {
                 detectDragGestures { _, dragAmount ->
@@ -179,6 +121,7 @@ private fun StaticImageContent(
                 }
             }
         }
+
         else -> Modifier
     }
 
@@ -194,16 +137,11 @@ private fun StaticImageContent(
             contentScale = contentScale,
             colorFilter = colorFilter,
             modifier = Modifier
-                .then(
-                    if (adjustment.fillMode == FillMode.FREE) {
-                        Modifier.fillMaxSize()
-                    } else {
-                        Modifier.fillMaxSize()
-                    }
-                )
+                .fillMaxSize()
                 .graphicsLayer {
                     scaleX = adjustment.scale * (if (adjustment.mirrorHorizontal) -1f else 1f)
-                    scaleY = if (adjustment.mirrorVertical) -1f else 1f
+                    scaleY = (if (adjustment.mirrorVertical) -1f else 1f) *
+                            (if (adjustment.fillMode == FillMode.FREE) adjustment.scale else 1f)
                     translationX = adjustment.offsetX
                     translationY = adjustment.offsetY
                 }
@@ -211,10 +149,10 @@ private fun StaticImageContent(
     }
 }
 
-// ━━━━━ 视频内容（不受调整参数影响）━━━━━
+// ━━━━━ 动态壁纸全屏层 ━━━━━
 
 @Composable
-private fun VideoContent(player: ExoPlayer?) {
+private fun VideoWallpaperLayer(player: ExoPlayer?) {
     player?.let { exoPlayer ->
         AndroidView(
             factory = { ctx ->
@@ -234,7 +172,7 @@ private fun VideoContent(player: ExoPlayer?) {
     }
 }
 
-// ━━━━━ 色彩滤镜构建 ━━━━━
+// ━━━━━ 色彩滤镜 ━━━━━
 
 private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
     val b = adjustment.brightness
@@ -243,7 +181,6 @@ private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
 
     if (b == 0f && c == 0f && s == 0f) return null
 
-    // 亮度矩阵：平移 RGB
     val brightnessOffset = b * 255f
     val brightnessMatrix = ColorMatrix(
         floatArrayOf(
@@ -254,7 +191,6 @@ private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
         )
     )
 
-    // 对比度矩阵：缩放 RGB 并偏移
     val contrastScale = 1f + c
     val contrastOffset = (-0.5f * contrastScale + 0.5f) * 255f
     val contrastMatrix = ColorMatrix(
@@ -266,12 +202,9 @@ private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
         )
     )
 
-    // 饱和度矩阵
     val saturationMatrix = ColorMatrix()
-    // s 范围 -1~1，映射到 setToSaturation 的 0~2
     saturationMatrix.setToSaturation((1f + s).coerceIn(0f, 2f))
 
-    // 合并
     val result = ColorMatrix()
     result.timesAssign(brightnessMatrix)
     result.timesAssign(contrastMatrix)
