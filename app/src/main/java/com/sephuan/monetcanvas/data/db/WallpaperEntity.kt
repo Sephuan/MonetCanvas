@@ -14,16 +14,27 @@ data class WallpaperEntity(
     val fileSize: Long,
     val width: Int,
     val height: Int,
-    val duration: Long? = null,         // 动态壁纸时长
-    val thumbnailPath: String,          // 缩略图路径
-    val addedTimestamp: Long,           // 导入时间
+    val duration: Long? = null,
+    val thumbnailPath: String,
+    val addedTimestamp: Long,
     val lastUsedTimestamp: Long? = null,
     val isFavorite: Boolean = false,
 
-    // 我们将在这里存储针对单个壁纸自定义的取色规则
-    // 注意：Room存储复杂对象需要转换器，我们下一步会做
+    // Monet 取色规则
     val framePosition: String = "FIRST",
     val colorRegion: String = "FULL_FRAME",
     val tonePreference: String = "AUTO",
-    val manualColor: Int? = null
+    val manualColor: Int? = null,
+
+    // ━━━━━ 新增：图片调整参数 ━━━━━
+    val fillMode: String = "COVER",
+    val mirrorHorizontal: Boolean = false,
+    val mirrorVertical: Boolean = false,
+    val brightness: Float = 0f,
+    val contrast: Float = 0f,
+    val saturation: Float = 0f,
+    val bgColorArgb: Int = 0xFF000000.toInt(),  // 背景色 ARGB
+    val adjustOffsetX: Float = 0f,
+    val adjustOffsetY: Float = 0f,
+    val adjustScale: Float = 1f
 )

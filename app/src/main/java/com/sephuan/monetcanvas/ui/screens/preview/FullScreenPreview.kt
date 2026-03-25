@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -57,12 +59,15 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
+import com.sephuan.monetcanvas.data.model.FillMode
+import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun FullScreenPreview(
     wallpaper: WallpaperEntity,
+    adjustment: ImageAdjustment = ImageAdjustment.DEFAULT,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -88,13 +93,13 @@ fun FullScreenPreview(
     val verticalPadding = (animatedProgress * 28f).dp
     val cornerRadius = (animatedProgress * 28f).dp
 
+    // 沉浸模式
     DisposableEffect(activity) {
         val window = activity?.window
         if (window != null) {
             val controller = WindowCompat.getInsetsController(window, window.decorView)
             controller.hide(WindowInsetsCompat.Type.systemBars())
         }
-
         onDispose {
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, window.decorView)
@@ -103,6 +108,7 @@ fun FullScreenPreview(
         }
     }
 
+    // Predictive back
     PredictiveBackHandler(enabled = true) { progress ->
         try {
             progress.collectLatest { event ->
@@ -121,6 +127,7 @@ fun FullScreenPreview(
         }
     }
 
+    // 播放器（仅动态壁纸）
     DisposableEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player = ExoPlayer.Builder(context).build().apply {
@@ -131,7 +138,6 @@ fun FullScreenPreview(
                 playWhenReady = true
             }
         }
-
         onDispose {
             player?.run {
                 pause()
@@ -152,6 +158,7 @@ fun FullScreenPreview(
         onDismiss()
     }
 
+    // ━━━━━ 主体 ━━━━━
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -181,11 +188,10 @@ fun FullScreenPreview(
         ) {
             when (wallpaper.type) {
                 WallpaperType.STATIC -> {
-                    AsyncImage(
-                        model = wallpaper.filePath,
-                        contentDescription = wallpaper.fileName,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                    // ★ 和预览页完全一致的渲染
+                    StaticFullScreenContent(
+                        wallpaper = wallpaper,
+                        adjustment = adjustment
                     )
                 }
 
@@ -195,7 +201,7 @@ fun FullScreenPreview(
                             factory = { ctx ->
                                 androidx.media3.ui.PlayerView(ctx).apply {
                                     useController = false
-                                    player = exoPlayer
+                                    this.player = exoPlayer
                                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                                 }
                             },
@@ -211,6 +217,7 @@ fun FullScreenPreview(
             }
         }
 
+        // 顶部关闭按钮
         AnimatedVisibility(
             visible = showControls && animatedProgress < 0.02f,
             enter = fadeIn(tween(250)) + slideInVertically(tween(280)) { -it / 2 },
@@ -230,6 +237,7 @@ fun FullScreenPreview(
             }
         }
 
+        // 底部信息栏
         AnimatedVisibility(
             visible = showControls && animatedProgress < 0.02f,
             enter = fadeIn(tween(250)) + slideInVertically(tween(280)) { it / 2 },
@@ -273,4 +281,87 @@ fun FullScreenPreview(
             }
         }
     }
+}
+
+// ━━━━━ ★ 静态壁纸全屏渲染（和 PreviewMediaSection 完全一致）━━━━━
+
+@Composable
+private fun StaticFullScreenContent(
+    wallpaper: WallpaperEntity,
+    adjustment: ImageAdjustment
+) {
+    val contentScale = when (adjustment.fillMode) {
+        FillMode.COVER -> ContentScale.Crop
+        FillMode.FIT -> ContentScale.Fit
+        FillMode.FREE -> ContentScale.Fit
+    }
+
+    val colorFilter = buildFullScreenColorFilter(adjustment)
+
+    // 背景色画布
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(adjustment.backgroundColor),
+        contentAlignment = Alignment.Center
+    ) {
+        AsyncImage(
+            model = wallpaper.filePath,
+            contentDescription = wallpaper.fileName,
+            contentScale = contentScale,
+            colorFilter = colorFilter,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
+                    val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
+
+                    scaleX = adjustment.scale * mirrorX
+                    scaleY = adjustment.scale * mirrorY
+                    translationX = adjustment.offsetX
+                    translationY = adjustment.offsetY
+                }
+        )
+    }
+}
+
+// ━━━━━ 色彩滤镜（和 PreviewMediaSection 完全一致）━━━━━
+
+private fun buildFullScreenColorFilter(adjustment: ImageAdjustment): ColorFilter? {
+    val b = adjustment.brightness
+    val c = adjustment.contrast
+    val s = adjustment.saturation
+
+    if (b == 0f && c == 0f && s == 0f) return null
+
+    val brightnessOffset = b * 255f
+    val brightnessMatrix = ColorMatrix(
+        floatArrayOf(
+            1f, 0f, 0f, 0f, brightnessOffset,
+            0f, 1f, 0f, 0f, brightnessOffset,
+            0f, 0f, 1f, 0f, brightnessOffset,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+
+    val contrastScale = 1f + c
+    val contrastOffset = (-0.5f * contrastScale + 0.5f) * 255f
+    val contrastMatrix = ColorMatrix(
+        floatArrayOf(
+            contrastScale, 0f, 0f, 0f, contrastOffset,
+            0f, contrastScale, 0f, 0f, contrastOffset,
+            0f, 0f, contrastScale, 0f, contrastOffset,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+
+    val saturationMatrix = ColorMatrix()
+    saturationMatrix.setToSaturation((1f + s).coerceIn(0f, 2f))
+
+    val result = ColorMatrix()
+    result.timesAssign(brightnessMatrix)
+    result.timesAssign(contrastMatrix)
+    result.timesAssign(saturationMatrix)
+
+    return ColorFilter.colorMatrix(result)
 }

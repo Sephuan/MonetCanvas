@@ -139,12 +139,66 @@ fun PreviewImageEditSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-        ))
-        Spacer(Modifier.height(12.dp))
+        SectionDivider()
 
-        // ━━━━━ 2. 镜像翻转 ━━━━━
+        // ━━━━━ 2. 背景色（所有模式都显示）━━━━━
+        SectionLabel("画布背景色")
+        Text(
+            text = "壁纸未覆盖区域的颜色（缩小或移动壁纸时可见）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ImageAdjustment.BACKGROUND_COLORS.forEach { color ->
+                val isSelected = adjustment.backgroundColor == color
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .then(
+                            if (isSelected) {
+                                Modifier.border(
+                                    3.dp,
+                                    MaterialTheme.colorScheme.primary,
+                                    CircleShape
+                                )
+                            } else {
+                                Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant,
+                                    CircleShape
+                                )
+                            }
+                        )
+                        .clickable {
+                            onAdjustmentChange(
+                                adjustment.copy(backgroundColor = color)
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (color == Color.White) Color.Black
+                            else Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        SectionDivider()
+
+        // ━━━━━ 3. 镜像翻转 ━━━━━
         SectionLabel("镜像翻转")
         Spacer(Modifier.height(4.dp))
 
@@ -164,12 +218,9 @@ fun PreviewImageEditSection(
             }
         )
 
-        HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-        ))
-        Spacer(Modifier.height(12.dp))
+        SectionDivider()
 
-        // ━━━━━ 3. 色彩调整 ━━━━━
+        // ━━━━━ 4. 色彩调整 ━━━━━
         SectionLabel("色彩调整")
         Spacer(Modifier.height(4.dp))
 
@@ -196,74 +247,6 @@ fun PreviewImageEditSection(
                 onAdjustmentChange(adjustment.copy(saturation = it))
             }
         )
-
-        // ━━━━━ 4. 背景色（仅 FIT 模式） ━━━━━
-        AnimatedVisibility(
-            visible = adjustment.fillMode == FillMode.FIT,
-            enter = expandVertically(tween(250)) + fadeIn(tween(250)),
-            exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
-        ) {
-            Column {
-                HorizontalDivider(Modifier.height(1.dp).fillMaxWidth().background(
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                ))
-                Spacer(Modifier.height(12.dp))
-
-                SectionLabel("背景色")
-                Text(
-                    text = "图片未覆盖区域的颜色",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ImageAdjustment.BACKGROUND_COLORS.forEach { color ->
-                        val isSelected = adjustment.backgroundColor == color
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .then(
-                                    if (isSelected) {
-                                        Modifier.border(
-                                            3.dp,
-                                            MaterialTheme.colorScheme.primary,
-                                            CircleShape
-                                        )
-                                    } else {
-                                        Modifier.border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            CircleShape
-                                        )
-                                    }
-                                )
-                                .clickable {
-                                    onAdjustmentChange(
-                                        adjustment.copy(backgroundColor = color)
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = if (color == Color.White) Color.Black
-                                    else Color.White
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -276,6 +259,15 @@ private fun SectionLabel(text: String) {
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurface
     )
+}
+
+@Composable
+private fun SectionDivider() {
+    Spacer(Modifier.height(12.dp))
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    )
+    Spacer(Modifier.height(12.dp))
 }
 
 @Composable

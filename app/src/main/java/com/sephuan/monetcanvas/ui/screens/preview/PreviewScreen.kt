@@ -21,6 +21,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,19 +48,17 @@ import kotlinx.coroutines.launch
 fun PreviewScreen(
     wallpaper: WallpaperEntity,
     onBack: () -> Unit,
-    onFullScreenClick: () -> Unit,
+    onFullScreenClick: (ImageAdjustment) -> Unit,
     viewModel: PreviewViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ━━━━━ 弹窗状态 ━━━━━
     var showApplyDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showRuleSheet by rememberSaveable { mutableStateOf(false) }
 
-    // ━━━━━ ViewModel 状态 ━━━━━
     val applyState by viewModel.applyState.collectAsStateWithLifecycle()
     val showReturnBanner by viewModel.showBanner.collectAsStateWithLifecycle()
     val bannerSuccess by viewModel.bannerSuccess.collectAsStateWithLifecycle()
@@ -70,13 +69,12 @@ fun PreviewScreen(
     val isApplying = applyState == ApplyState.APPLYING
     val isWaitingConfirm = applyState == ApplyState.WAITING_CONFIRM
 
-    // ━━━━━ 本地状态 ━━━━━
     var currentRule by remember { mutableStateOf<MonetRule?>(null) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isExiting by remember { mutableStateOf(false) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
+    var adjustmentLoaded by remember { mutableStateOf(false) }
 
-    // ━━━━━ Predictive Back ━━━━━
     var backProgress by remember { mutableFloatStateOf(0f) }
 
     val animatedProgress by animateFloatAsState(
@@ -95,6 +93,7 @@ fun PreviewScreen(
 
     val currentApplyState by rememberUpdatedState(applyState)
     val currentRuleState by rememberUpdatedState(currentRule)
+    val currentAdjustment by rememberUpdatedState(imageAdjustment)
 
     val applyButtonAlpha by animateFloatAsState(
         targetValue = if (isApplying || isWaitingConfirm) 0.6f else 1f,
@@ -102,13 +101,15 @@ fun PreviewScreen(
         label = "applyAlpha"
     )
 
-    // ━━━━━ Predictive Back Handler ━━━━━
     PredictiveBackHandler(enabled = !isApplying && !isWaitingConfirm) { progress ->
         try {
             progress.collectLatest { event ->
                 backProgress = event.progress
             }
             backProgress = 1f
+            if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
+                viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
+            }
             player?.clearVideoSurface()
             player?.pause()
             player?.stop()
@@ -120,7 +121,6 @@ fun PreviewScreen(
         }
     }
 
-    // ━━━━━ 初始化播放器 ━━━━━
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player?.release()
@@ -134,7 +134,6 @@ fun PreviewScreen(
         }
     }
 
-    // ━━━━━ 页面销毁时释放 ━━━━━
     DisposableEffect(Unit) {
         onDispose {
             player?.pause()
@@ -144,11 +143,15 @@ fun PreviewScreen(
         }
     }
 
-    // ━━━━━ 生命周期 ━━━━━
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> player?.pause()
+                Lifecycle.Event.ON_PAUSE -> {
+                    player?.pause()
+                    if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
+                        viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
+                    }
+                }
                 Lifecycle.Event.ON_STOP -> player?.pause()
                 Lifecycle.Event.ON_RESUME -> {
                     player?.play()
@@ -167,14 +170,17 @@ fun PreviewScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ━━━━━ 初始化规则与颜色 ━━━━━
     LaunchedEffect(wallpaper.id) {
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
         viewModel.analyzeColors(wallpaper, rule)
+
+        if (wallpaper.type == WallpaperType.STATIC) {
+            imageAdjustment = viewModel.loadAdjustmentForWallpaper(wallpaper)
+        }
+        adjustmentLoaded = true
     }
 
-    // ━━━━━ 延迟退出 ━━━━━
     LaunchedEffect(isExiting) {
         if (isExiting) {
             delay(10)
@@ -182,8 +188,10 @@ fun PreviewScreen(
         }
     }
 
-    // ━━━━━ 操作函数 ━━━━━
     fun safeBack() {
+        if (wallpaper.type == WallpaperType.STATIC && imageAdjustment.hasAnyAdjustment) {
+            viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
+        }
         player?.clearVideoSurface()
         player?.pause()
         player?.stop()
@@ -192,9 +200,13 @@ fun PreviewScreen(
         isExiting = true
     }
 
+    // ★ 打开全屏前保存调整参数并传递
     fun openFullScreen() {
+        if (wallpaper.type == WallpaperType.STATIC) {
+            viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
+        }
         player?.pause()
-        onFullScreenClick()
+        onFullScreenClick(imageAdjustment)
     }
 
     fun handleApply(target: Int) {
@@ -205,11 +217,11 @@ fun PreviewScreen(
             context = context,
             wallpaper = wallpaper,
             target = target,
-            rule = rule
+            rule = rule,
+            adjustment = imageAdjustment
         )
     }
 
-    // ━━━━━ 页面主体：全屏壁纸 + 底部面板 ━━━━━
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -226,7 +238,6 @@ fun PreviewScreen(
                 }
                 .clip(RoundedCornerShape(cornerRadius))
         ) {
-            // ━━━━━ 背景层：壁纸全屏 ━━━━━
             PreviewMediaSection(
                 wallpaper = wallpaper,
                 player = player,
@@ -235,7 +246,6 @@ fun PreviewScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // ━━━━━ 前景层：底部可拉面板 ━━━━━
             PreviewBottomPanel(
                 wallpaper = wallpaper,
                 onBack = ::safeBack,
@@ -252,12 +262,11 @@ fun PreviewScreen(
                 showReturnBanner = showReturnBanner,
                 bannerSuccess = bannerSuccess,
                 adjustment = imageAdjustment,
-                onAdjustmentChange = { imageAdjustment = it }
+                onAdjustmentChange = { imageAdjustment = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
-
-    // ━━━━━ 弹窗区域 ━━━━━
 
     if (showApplyDialog) {
         ApplyWallpaperDialog(

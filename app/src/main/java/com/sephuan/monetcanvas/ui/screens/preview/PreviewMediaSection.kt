@@ -3,11 +3,15 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,6 +19,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
@@ -26,8 +31,8 @@ import com.sephuan.monetcanvas.data.model.WallpaperType
 
 /**
  * 全屏壁纸背景层
- * 静态壁纸：支持调整参数 + 触屏手势
- * 动态壁纸：全屏视频播放
+ * 底层 = 可换色画布
+ * 上层 = 壁纸图片（可移动、缩放、调色）
  */
 @Composable
 fun PreviewMediaSection(
@@ -37,16 +42,11 @@ fun PreviewMediaSection(
     adjustment: ImageAdjustment = ImageAdjustment.DEFAULT,
     onAdjustmentChange: ((ImageAdjustment) -> Unit)? = null
 ) {
+    // ★ 始终显示背景色画布（不只是 FIT 模式）
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                if (wallpaper.type == WallpaperType.STATIC && adjustment.fillMode == FillMode.FIT) {
-                    adjustment.backgroundColor
-                } else {
-                    Color.Black
-                }
-            )
+            .background(adjustment.backgroundColor)
     ) {
         when (wallpaper.type) {
             WallpaperType.STATIC -> {
@@ -64,7 +64,7 @@ fun PreviewMediaSection(
     }
 }
 
-// ━━━━━ 静态壁纸全屏层 ━━━━━
+// ━━━━━ 静态壁纸层（画布模式）━━━━━
 
 @Composable
 private fun StaticWallpaperLayer(
@@ -72,6 +72,10 @@ private fun StaticWallpaperLayer(
     adjustment: ImageAdjustment,
     onAdjustmentChange: ((ImageAdjustment) -> Unit)?
 ) {
+    // ★ 用 rememberUpdatedState 保证手势 lambda 里拿到的永远是最新值
+    val latestAdjustment by rememberUpdatedState(adjustment)
+    val latestCallback by rememberUpdatedState(onAdjustmentChange)
+
     val contentScale = when (adjustment.fillMode) {
         FillMode.COVER -> ContentScale.Crop
         FillMode.FIT -> ContentScale.Fit
@@ -80,55 +84,79 @@ private fun StaticWallpaperLayer(
 
     val colorFilter = buildColorFilter(adjustment)
 
-    val gestureModifier = when {
-        onAdjustmentChange == null -> Modifier
-
-        adjustment.fillMode == FillMode.FREE -> {
-            Modifier.pointerInput(adjustment.fillMode) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val newScale = (adjustment.scale * zoom).coerceIn(0.3f, 5f)
-                    onAdjustmentChange(
-                        adjustment.copy(
-                            offsetX = adjustment.offsetX + pan.x,
-                            offsetY = adjustment.offsetY + pan.y,
-                            scale = newScale
-                        )
-                    )
-                }
-            }
-        }
-
-        adjustment.fillMode == FillMode.COVER -> {
-            Modifier.pointerInput(adjustment.fillMode) {
-                detectDragGestures { _, dragAmount ->
-                    onAdjustmentChange(
-                        adjustment.copy(
-                            offsetX = adjustment.offsetX + dragAmount.x
-                        )
-                    )
-                }
-            }
-        }
-
-        adjustment.fillMode == FillMode.FIT -> {
-            Modifier.pointerInput(adjustment.fillMode) {
-                detectDragGestures { _, dragAmount ->
-                    onAdjustmentChange(
-                        adjustment.copy(
-                            offsetY = adjustment.offsetY + dragAmount.y
-                        )
-                    )
-                }
-            }
-        }
-
-        else -> Modifier
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .then(gestureModifier),
+            .then(
+                if (latestCallback != null) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+
+                            do {
+                                val event = awaitPointerEvent()
+                                val pointers = event.changes
+
+                                val currentAdj = latestAdjustment
+                                val callback = latestCallback ?: continue
+
+                                if (pointers.size >= 2) {
+                                    // ★ 多指：缩放 + 平移（所有模式都支持）
+                                    val pan = event.calculatePan()
+                                    val zoom = event.calculateZoom()
+                                    val newScale = (currentAdj.scale * zoom).coerceIn(0.2f, 8f)
+
+                                    callback(
+                                        currentAdj.copy(
+                                            offsetX = currentAdj.offsetX + pan.x,
+                                            offsetY = currentAdj.offsetY + pan.y,
+                                            scale = newScale
+                                        )
+                                    )
+                                    pointers.forEach { it.consume() }
+
+                                } else if (pointers.size == 1) {
+                                    val change = pointers.first()
+                                    if (change.positionChanged()) {
+                                        val delta = change.position - change.previousPosition
+
+                                        when (currentAdj.fillMode) {
+                                            FillMode.COVER -> {
+                                                // 覆盖模式：左右移动
+                                                callback(
+                                                    currentAdj.copy(
+                                                        offsetX = currentAdj.offsetX + delta.x
+                                                    )
+                                                )
+                                            }
+                                            FillMode.FIT -> {
+                                                // 填充模式：上下移动
+                                                callback(
+                                                    currentAdj.copy(
+                                                        offsetY = currentAdj.offsetY + delta.y
+                                                    )
+                                                )
+                                            }
+                                            FillMode.FREE -> {
+                                                // 自由模式：任意方向移动
+                                                callback(
+                                                    currentAdj.copy(
+                                                        offsetX = currentAdj.offsetX + delta.x,
+                                                        offsetY = currentAdj.offsetY + delta.y
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        change.consume()
+                                    }
+                                }
+                            } while (pointers.any { it.pressed })
+                        }
+                    }
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
@@ -139,9 +167,12 @@ private fun StaticWallpaperLayer(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = adjustment.scale * (if (adjustment.mirrorHorizontal) -1f else 1f)
-                    scaleY = (if (adjustment.mirrorVertical) -1f else 1f) *
-                            (if (adjustment.fillMode == FillMode.FREE) adjustment.scale else 1f)
+                    // ★ 统一用 adjustment.scale 控制缩放
+                    val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
+                    val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
+
+                    scaleX = adjustment.scale * mirrorX
+                    scaleY = adjustment.scale * mirrorY
                     translationX = adjustment.offsetX
                     translationY = adjustment.offsetY
                 }

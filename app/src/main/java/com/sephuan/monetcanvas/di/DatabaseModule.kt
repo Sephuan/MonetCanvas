@@ -27,7 +27,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "monet_canvas.db"
         )
-            .fallbackToDestructiveMigration()
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
     }
 

@@ -2,42 +2,24 @@ package com.sephuan.monetcanvas.data.model
 
 import androidx.compose.ui.graphics.Color
 
-/**
- * 填充方式
- */
 enum class FillMode {
-    COVER,  // 覆盖：图片铺满，可左右移动
-    FIT,    // 填充：图片完整显示在框内，可上下移动
-    FREE    // 自由：可缩放 + 任意方向移动
+    COVER,
+    FIT,
+    FREE
 }
 
-/**
- * 图片调整参数
- */
 data class ImageAdjustment(
-    // 镜像
     val mirrorHorizontal: Boolean = false,
     val mirrorVertical: Boolean = false,
-
-    // 色彩调整 (范围 -1f ~ 1f，0f = 不调整)
     val brightness: Float = 0f,
     val contrast: Float = 0f,
     val saturation: Float = 0f,
-
-    // 背景色（FIT 模式下图片不铺满时显示）
     val backgroundColor: Color = Color.Black,
-
-    // 填充方式
     val fillMode: FillMode = FillMode.COVER,
-
-    // 位移和缩放（用户触屏操作的结果）
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
     val scale: Float = 1f
 ) {
-    /**
-     * 是否有任何调整（用于判断是否显示"重置"按钮）
-     */
     val hasAnyAdjustment: Boolean
         get() = mirrorHorizontal ||
                 mirrorVertical ||
@@ -53,16 +35,68 @@ data class ImageAdjustment(
     companion object {
         val DEFAULT = ImageAdjustment()
 
-        // 背景色预设
         val BACKGROUND_COLORS = listOf(
+            // 纯色
             Color.Black,
             Color.White,
+            Color(0xFF808080),  // 中灰
+            Color(0xFF404040),  // 深灰
+            Color(0xFFC0C0C0),  // 浅灰
+
+            // 深色系
             Color(0xFF1A1A2E),  // 深蓝黑
             Color(0xFF16213E),  // 藏青
             Color(0xFF0F3460),  // 深蓝
             Color(0xFF1B1B2F),  // 暗紫黑
             Color(0xFF2C3333),  // 深灰绿
             Color(0xFF3D0000),  // 深红
+            Color(0xFF1A1A1A),  // 近黑
+            Color(0xFF0D1117),  // GitHub 深色
+            Color(0xFF1E1E2E),  // Catppuccin 深色
+
+            // 蓝色系
+            Color(0xFF1565C0),  // 深蓝
+            Color(0xFF2196F3),  // 标准蓝
+            Color(0xFF42A5F5),  // 浅蓝
+            Color(0xFF0288D1),  // 亮蓝
+            Color(0xFF01579B),  // 极深蓝
+            Color(0xFF1A237E),  // 靛蓝
+
+            // 绿色系
+            Color(0xFF2E7D32),  // 深绿
+            Color(0xFF4CAF50),  // 标准绿
+            Color(0xFF00695C),  // 深青绿
+            Color(0xFF009688),  // 青绿
+            Color(0xFF1B5E20),  // 极深绿
+
+            // 红/橙/粉
+            Color(0xFFB71C1C),  // 深红
+            Color(0xFFE91E63),  // 粉红
+            Color(0xFFC62828),  // 红色
+            Color(0xFFFF5722),  // 橙红
+            Color(0xFFFF9800),  // 橙色
+            Color(0xFFE65100),  // 深橙
+
+            // 紫色系
+            Color(0xFF6A1B9A),  // 深紫
+            Color(0xFF9C27B0),  // 紫色
+            Color(0xFF4A148C),  // 极深紫
+            Color(0xFF7B1FA2),  // 中紫
+            Color(0xFF311B92),  // 深靛紫
+
+            // 暖色/棕色
+            Color(0xFF795548),  // 棕色
+            Color(0xFF4E342E),  // 深棕
+            Color(0xFF3E2723),  // 极深棕
+            Color(0xFF5D4037),  // 中棕
+            Color(0xFF8D6E63),  // 浅棕
+
+            // 黄/青
+            Color(0xFFFFC107),  // 琥珀
+            Color(0xFFCDDC39),  // 柠檬
+            Color(0xFF00BCD4),  // 青色
+            Color(0xFF006064),  // 深青
+            Color(0xFFFFEB3B),  // 黄色
         )
     }
 }

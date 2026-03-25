@@ -28,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
+import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.ui.screens.home.HomeScreen
 import com.sephuan.monetcanvas.ui.screens.preview.FullScreenPreview
 import com.sephuan.monetcanvas.ui.screens.preview.PreviewScreen
@@ -47,11 +48,12 @@ private object Routes {
 fun MonetNavGraph(
     navController: NavHostController = rememberNavController()
 ) {
-    // 简单内存缓存：减少重复查库和切页闪烁
     var cachedWallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
     var cachedWallpaperId by remember { mutableLongStateOf(-1L) }
 
-    // ★ 给整个导航容器明确背景色，进一步减少切页露白
+    // ★ 缓存调整参数，预览页传给全屏页
+    var cachedAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -69,6 +71,7 @@ fun MonetNavGraph(
                         onWallpaperClick = { wallpaper ->
                             cachedWallpaper = wallpaper
                             cachedWallpaperId = wallpaper.id
+                            cachedAdjustment = ImageAdjustment.DEFAULT
                             navController.navigate(Routes.preview(wallpaper.id))
                         },
                         onOpenSettings = {
@@ -131,7 +134,9 @@ fun MonetNavGraph(
                             PreviewScreen(
                                 wallpaper = wallpaper!!,
                                 onBack = { navController.popBackStack() },
-                                onFullScreenClick = {
+                                onFullScreenClick = { adjustment ->
+                                    // ★ 缓存调整参数再导航
+                                    cachedAdjustment = adjustment
                                     navController.navigate(Routes.fullScreen(wallpaperId))
                                 }
                             )
@@ -171,30 +176,30 @@ fun MonetNavGraph(
                     }
                 }
 
-                ScreenContainer {
-                    when {
-                        loadFailed -> {
-                            RecoveryScreen(
-                                message = "壁纸不存在或已删除",
-                                onGoHome = {
-                                    navController.navigate(Routes.HOME) {
-                                        popUpTo(0) { inclusive = true }
-                                        launchSingleTop = true
-                                    }
+                when {
+                    loadFailed -> {
+                        RecoveryScreen(
+                            message = "壁纸不存在或已删除",
+                            onGoHome = {
+                                navController.navigate(Routes.HOME) {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
                                 }
-                            )
-                        }
+                            }
+                        )
+                    }
 
-                        wallpaper == null -> {
-                            LoadingScreen()
-                        }
+                    wallpaper == null -> {
+                        LoadingScreen()
+                    }
 
-                        else -> {
-                            FullScreenPreview(
-                                wallpaper = wallpaper!!,
-                                onDismiss = { navController.popBackStack() }
-                            )
-                        }
+                    else -> {
+                        // ★ 传入缓存的调整参数
+                        FullScreenPreview(
+                            wallpaper = wallpaper!!,
+                            adjustment = cachedAdjustment,
+                            onDismiss = { navController.popBackStack() }
+                        )
                     }
                 }
             }

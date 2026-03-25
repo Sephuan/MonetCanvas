@@ -1,9 +1,5 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,11 +44,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
@@ -66,121 +62,114 @@ import kotlin.math.roundToInt
 @Composable
 fun PreviewBottomPanel(
     wallpaper: WallpaperEntity,
-    // 操作回调
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onFullScreenClick: () -> Unit,
     onApplyClick: () -> Unit,
-    // 状态
     isApplying: Boolean,
     isWaitingConfirm: Boolean,
     applyButtonAlpha: Float,
-    // 取色
     currentRule: MonetRule?,
     extractedColors: ExtractedColors?,
     isAnalyzing: Boolean,
     onConfigClick: () -> Unit,
-    // 横幅
     showReturnBanner: Boolean,
     bannerSuccess: Boolean,
-    // 图片调整（仅静态）
     adjustment: ImageAdjustment,
     onAdjustmentChange: (ImageAdjustment) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     val screenHeightPx = with(density) { screenHeightDp.toPx() }
 
     val isStatic = wallpaper.type == WallpaperType.STATIC
 
-    // 面板最小高度（收起状态）和最大高度（展开状态）
-    val collapsedHeightPx = with(density) { 200.dp.toPx() }
-    val expandedHeightPx = screenHeightPx * 0.72f
+    // 面板高度范围（像素）
+    val collapsedPx = with(density) { 160.dp.toPx() }
+    val expandedPx = screenHeightPx * 0.68f
 
-    // 面板当前偏移（0 = 最大展开，正值 = 往下收起）
-    var panelOffsetY by remember {
-        mutableFloatStateOf(expandedHeightPx - collapsedHeightPx)
-    }
+    // 当前面板高度
+    var panelHeightPx by remember { mutableFloatStateOf(collapsedPx) }
 
-    val panelColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+    val panelHeightDp = with(density) { panelHeightPx.toDp() }
+    val panelColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f)
 
-    Box(
-        modifier = modifier.fillMaxSize()
+    // ★ 面板只占底部区域，不 fillMaxSize
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(panelHeightDp)
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(panelColor)
     ) {
-        // ━━━━━ 底部面板 ━━━━━
-        Column(
+        // ━━━━━ 拖拽手柄（只有这个区域拦截垂直拖拽）━━━━━
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(with(density) { expandedHeightPx.toDp() })
-                .align(Alignment.BottomCenter)
-                .offset { IntOffset(0, panelOffsetY.roundToInt()) }
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(panelColor)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { _, dragAmount ->
+                        // 向上拖 = dragAmount < 0 = 增大高度
+                        // 向下拖 = dragAmount > 0 = 减小高度
+                        panelHeightPx = (panelHeightPx - dragAmount)
+                            .coerceIn(collapsedPx, expandedPx)
+                    }
+                }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // ━━━━━ 拖拽手柄 ━━━━━
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            val maxOffset = expandedHeightPx - collapsedHeightPx
-                            panelOffsetY = (panelOffsetY + dragAmount).coerceIn(0f, maxOffset)
-                        }
-                    }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+            )
+        }
+
+        // ━━━━━ 标题栏 ━━━━━
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = stringResource(R.string.back),
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
 
-            // ━━━━━ 标题栏 ━━━━━
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.back),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Text(
-                    text = wallpaper.fileName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = stringResource(R.string.delete),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            // ━━━━━ 横幅 ━━━━━
-            ReturnBannerSection(
-                visible = showReturnBanner,
-                analyzing = isAnalyzing,
-                success = bannerSuccess
+            Text(
+                text = wallpaper.fileName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
             )
 
-            // ━━━━━ 标签页内容 ━━━━━
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // ━━━━━ 横幅 ━━━━━
+        ReturnBannerSection(
+            visible = showReturnBanner,
+            analyzing = isAnalyzing,
+            success = bannerSuccess
+        )
+
+        // ━━━━━ 标签页内容（占满剩余空间）━━━━━
+        Box(modifier = Modifier.weight(1f)) {
             if (isStatic) {
                 StaticPanelContent(
                     wallpaper = wallpaper,
@@ -234,82 +223,84 @@ private fun StaticPanelContent(
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
 
-    TabRow(
-        selectedTabIndex = pagerState.currentPage,
-        containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary,
-        indicator = { tabPositions ->
-            if (pagerState.currentPage < tabPositions.size) {
-                TabRowDefaults.PrimaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                    width = 36.dp,
-                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                if (pagerState.currentPage < tabPositions.size) {
+                    TabRowDefaults.PrimaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                        width = 36.dp,
+                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                    )
+                }
             }
-        }
-    ) {
-        PanelTab(
-            selected = pagerState.currentPage == 0,
-            icon = Icons.Outlined.Image,
-            label = "操作",
-            onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
-        )
-        PanelTab(
-            selected = pagerState.currentPage == 1,
-            icon = Icons.Outlined.Edit,
-            label = "调整",
-            onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
-        )
-        PanelTab(
-            selected = pagerState.currentPage == 2,
-            icon = Icons.Outlined.Palette,
-            label = "取色",
-            onClick = { scope.launch { pagerState.animateScrollToPage(2) } }
-        )
-    }
-
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = 2
-    ) { page ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            when (page) {
-                0 -> {
-                    PreviewActionSection(
-                        applyButtonAlpha = applyButtonAlpha,
-                        isApplying = isApplying,
-                        isWaitingConfirm = isWaitingConfirm,
-                        onFullScreenClick = onFullScreenClick,
-                        onApplyClick = onApplyClick
-                    )
-                    Spacer(Modifier.height(60.dp))
-                }
+            PanelTab(
+                selected = pagerState.currentPage == 0,
+                icon = Icons.Outlined.Image,
+                label = "操作",
+                onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
+            )
+            PanelTab(
+                selected = pagerState.currentPage == 1,
+                icon = Icons.Outlined.Edit,
+                label = "调整",
+                onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
+            )
+            PanelTab(
+                selected = pagerState.currentPage == 2,
+                icon = Icons.Outlined.Palette,
+                label = "取色",
+                onClick = { scope.launch { pagerState.animateScrollToPage(2) } }
+            )
+        }
 
-                1 -> {
-                    PreviewImageEditSection(
-                        adjustment = adjustment,
-                        onAdjustmentChange = onAdjustmentChange
-                    )
-                    Spacer(Modifier.height(60.dp))
-                }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 2
+        ) { page ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when (page) {
+                    0 -> {
+                        PreviewActionSection(
+                            applyButtonAlpha = applyButtonAlpha,
+                            isApplying = isApplying,
+                            isWaitingConfirm = isWaitingConfirm,
+                            onFullScreenClick = onFullScreenClick,
+                            onApplyClick = onApplyClick
+                        )
+                        Spacer(Modifier.height(40.dp))
+                    }
 
-                2 -> {
-                    PreviewMonetSection(
-                        wallpaper = wallpaper,
-                        currentRule = currentRule,
-                        extractedColors = extractedColors,
-                        isAnalyzing = isAnalyzing,
-                        onConfigClick = onConfigClick
-                    )
-                    Spacer(Modifier.height(60.dp))
+                    1 -> {
+                        PreviewImageEditSection(
+                            adjustment = adjustment,
+                            onAdjustmentChange = onAdjustmentChange
+                        )
+                        Spacer(Modifier.height(40.dp))
+                    }
+
+                    2 -> {
+                        PreviewMonetSection(
+                            wallpaper = wallpaper,
+                            currentRule = currentRule,
+                            extractedColors = extractedColors,
+                            isAnalyzing = isAnalyzing,
+                            onConfigClick = onConfigClick
+                        )
+                        Spacer(Modifier.height(40.dp))
+                    }
                 }
             }
         }
@@ -334,68 +325,70 @@ private fun LivePanelContent(
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
 
-    TabRow(
-        selectedTabIndex = pagerState.currentPage,
-        containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary,
-        indicator = { tabPositions ->
-            if (pagerState.currentPage < tabPositions.size) {
-                TabRowDefaults.PrimaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                    width = 36.dp,
-                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
-                )
-            }
-        }
-    ) {
-        PanelTab(
-            selected = pagerState.currentPage == 0,
-            icon = Icons.Outlined.Image,
-            label = "操作",
-            onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
-        )
-        PanelTab(
-            selected = pagerState.currentPage == 1,
-            icon = Icons.Outlined.Palette,
-            label = "取色",
-            onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
-        )
-    }
-
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = 1
-    ) { page ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            when (page) {
-                0 -> {
-                    PreviewActionSection(
-                        applyButtonAlpha = applyButtonAlpha,
-                        isApplying = isApplying,
-                        isWaitingConfirm = isWaitingConfirm,
-                        onFullScreenClick = onFullScreenClick,
-                        onApplyClick = onApplyClick
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                if (pagerState.currentPage < tabPositions.size) {
+                    TabRowDefaults.PrimaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                        width = 36.dp,
+                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
                     )
-                    Spacer(Modifier.height(60.dp))
                 }
+            }
+        ) {
+            PanelTab(
+                selected = pagerState.currentPage == 0,
+                icon = Icons.Outlined.Image,
+                label = "操作",
+                onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
+            )
+            PanelTab(
+                selected = pagerState.currentPage == 1,
+                icon = Icons.Outlined.Palette,
+                label = "取色",
+                onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
+            )
+        }
 
-                1 -> {
-                    PreviewMonetSection(
-                        wallpaper = wallpaper,
-                        currentRule = currentRule,
-                        extractedColors = extractedColors,
-                        isAnalyzing = isAnalyzing,
-                        onConfigClick = onConfigClick
-                    )
-                    Spacer(Modifier.height(60.dp))
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1
+        ) { page ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when (page) {
+                    0 -> {
+                        PreviewActionSection(
+                            applyButtonAlpha = applyButtonAlpha,
+                            isApplying = isApplying,
+                            isWaitingConfirm = isWaitingConfirm,
+                            onFullScreenClick = onFullScreenClick,
+                            onApplyClick = onApplyClick
+                        )
+                        Spacer(Modifier.height(40.dp))
+                    }
+
+                    1 -> {
+                        PreviewMonetSection(
+                            wallpaper = wallpaper,
+                            currentRule = currentRule,
+                            extractedColors = extractedColors,
+                            isAnalyzing = isAnalyzing,
+                            onConfigClick = onConfigClick
+                        )
+                        Spacer(Modifier.height(40.dp))
+                    }
                 }
             }
         }
@@ -407,7 +400,7 @@ private fun LivePanelContent(
 @Composable
 private fun PanelTab(
     selected: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     onClick: () -> Unit
 ) {
