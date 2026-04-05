@@ -1,35 +1,28 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
-import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -39,9 +32,9 @@ import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PreviewScreen(
     wallpaper: WallpaperEntity,
@@ -51,15 +44,12 @@ fun PreviewScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val lifecycleOwner = LocalLifecycleOwner.current
 
-    var showApplyDialog by rememberSaveable { mutableStateOf(false) }
-    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
-    var showRuleSheet by rememberSaveable { mutableStateOf(false) }
+    var showApplyDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showRuleSheet by remember { mutableStateOf(false) }
 
     val applyState by viewModel.applyState.collectAsStateWithLifecycle()
-    val showReturnBanner by viewModel.showBanner.collectAsStateWithLifecycle()
-    val bannerSuccess by viewModel.bannerSuccess.collectAsStateWithLifecycle()
     val extractedColors by viewModel.extractedColors.collectAsStateWithLifecycle()
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
     val liveWpResult by viewModel.liveWpResult.collectAsStateWithLifecycle()
@@ -69,64 +59,9 @@ fun PreviewScreen(
 
     var currentRule by remember { mutableStateOf<MonetRule?>(null) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
-    var isExiting by remember { mutableStateOf(false) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    // 跟手返回进度
-    var backProgress by remember { mutableFloatStateOf(0f) }
-    var isBackExecuted by remember { mutableStateOf(false) }
-
-    // 动画立即跟随手指
-    val animatedProgress by animateFloatAsState(
-        targetValue = backProgress,
-        animationSpec = tween(durationMillis = 0),
-        label = "previewBackProgress"
-    )
-
-    // 柔和的变化系数（与设置页一致）
-    val scale = 1f - (animatedProgress * 0.03f)
-    val contentAlpha = 1f - (animatedProgress * 0.05f)
-    val translateX = animatedProgress * 30f
-    val cornerRadius = (animatedProgress * 20f).dp
-
-    val currentApplyState by rememberUpdatedState(applyState)
-    val currentRuleState by rememberUpdatedState(currentRule)
-    val currentAdjustment by rememberUpdatedState(imageAdjustment)
-
-    val applyButtonAlpha by animateFloatAsState(
-        targetValue = if (isApplying || isWaitingConfirm) 0.6f else 1f,
-        animationSpec = tween(220),
-        label = "applyAlpha"
-    )
-
-    // 预测返回处理器：只更新进度，等待手势完成
-    PredictiveBackHandler(enabled = !isApplying && !isWaitingConfirm) { backEventFlow ->
-        isBackExecuted = false
-        backEventFlow.collect { backEvent ->
-            backProgress = backEvent.progress
-        }
-        if (!isBackExecuted) {
-            isBackExecuted = true
-            // 手势完成，执行返回
-            if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
-                viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
-            }
-            player?.clearVideoSurface()
-            player?.pause()
-            player?.stop()
-            player?.release()
-            player = null
-            isExiting = true
-        }
-    }
-
-    // 重置标志（页面重新进入时）
-    LaunchedEffect(Unit) {
-        isBackExecuted = false
-        backProgress = 0f
-    }
-
-    // 初始化播放器（仅动态壁纸）
+    // 初始化播放器
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player?.release()
@@ -142,136 +77,78 @@ fun PreviewScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            player?.pause()
-            player?.stop()
             player?.release()
             player = null
         }
     }
 
-    // 生命周期监听（处理从系统确认页返回）
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> player?.pause()
-                Lifecycle.Event.ON_STOP -> player?.pause()
-                Lifecycle.Event.ON_RESUME -> {
-                    player?.play()
-                    if (currentApplyState == ApplyState.WAITING_CONFIRM) {
-                        viewModel.onReturnFromSystemPage(
-                            context = context,
-                            wallpaper = wallpaper,
-                            rule = currentRuleState ?: MonetRule()
-                        )
-                    }
-                }
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    // 加载取色规则和调整参数
+    // 加载规则
     LaunchedEffect(wallpaper.id) {
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
         viewModel.analyzeColors(wallpaper, rule)
-
         if (wallpaper.type == WallpaperType.STATIC) {
             imageAdjustment = viewModel.loadAdjustmentForWallpaper(wallpaper)
         }
     }
 
-    LaunchedEffect(isExiting) {
-        if (isExiting) {
-            kotlinx.coroutines.delay(10)
-            onBack()
-        }
-    }
-
-    // 安全返回（主动点击返回按钮时调用）
-    fun safeBack() {
-        if (wallpaper.type == WallpaperType.STATIC && imageAdjustment.hasAnyAdjustment) {
-            viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
-        }
-        player?.clearVideoSurface()
-        player?.pause()
-        player?.stop()
-        player?.release()
-        player = null
-        isExiting = true
-    }
-
-    fun openFullScreen() {
-        if (wallpaper.type == WallpaperType.STATIC) {
-            viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
-        }
-        player?.pause()
-        onFullScreenClick(imageAdjustment)
-    }
-
     fun handleApply(target: Int) {
         if (isApplying || isWaitingConfirm) return
         val rule = currentRule ?: MonetRule()
-        player?.pause()
-        viewModel.applyWallpaper(
-            context = context,
-            wallpaper = wallpaper,
-            target = target,
-            rule = rule,
-            adjustment = imageAdjustment
-        )
+        viewModel.applyWallpaper(context, wallpaper, target, rule, imageAdjustment)
     }
 
-    // 页面主体：带返回动画的容器
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        Box(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(wallpaper.fileName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    alpha = contentAlpha
-                    translationX = translateX
-                }
-                .clip(RoundedCornerShape(cornerRadius))
+                .padding(padding)
         ) {
             PreviewMediaSection(
                 wallpaper = wallpaper,
                 player = player,
                 adjustment = imageAdjustment,
                 onAdjustmentChange = { imageAdjustment = it },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.weight(1f)
             )
 
             PreviewBottomPanel(
                 wallpaper = wallpaper,
-                onBack = ::safeBack,
+                onBack = onBack,
                 onDelete = { showDeleteDialog = true },
-                onFullScreenClick = ::openFullScreen,
+                onFullScreenClick = { onFullScreenClick(imageAdjustment) },
                 onApplyClick = { showApplyDialog = true },
                 isApplying = isApplying,
                 isWaitingConfirm = isWaitingConfirm,
-                applyButtonAlpha = applyButtonAlpha,
+                applyButtonAlpha = 1f,
                 currentRule = currentRule,
                 extractedColors = extractedColors,
                 isAnalyzing = isAnalyzing,
                 onConfigClick = { showRuleSheet = true },
-                showReturnBanner = showReturnBanner,
-                bannerSuccess = bannerSuccess,
+                showReturnBanner = false,
+                bannerSuccess = false,
                 adjustment = imageAdjustment,
                 onAdjustmentChange = { imageAdjustment = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
             )
         }
     }
 
-    // 弹窗
+    // 弹窗（保持原样）
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
@@ -282,22 +159,15 @@ fun PreviewScreen(
             onApplyLive = { showApplyDialog = false; handleApply(0) }
         )
     }
-
     if (showDeleteDialog) {
         DeleteWallpaperDialog(
             onDismiss = { showDeleteDialog = false },
             onConfirm = {
                 showDeleteDialog = false
-                player?.clearVideoSurface()
-                player?.pause()
-                player?.stop()
-                player?.release()
-                player = null
                 viewModel.deleteWallpaper(context, wallpaper) { onBack() }
             }
         )
     }
-
     if (showRuleSheet && currentRule != null) {
         MonetRuleBottomSheet(
             rule = currentRule!!,
@@ -313,7 +183,6 @@ fun PreviewScreen(
             }
         )
     }
-
     if (liveWpResult == LiveWpResult.FAILED) {
         LiveWallpaperFailedDialog(
             onDismiss = { viewModel.clearLiveWpResult() },

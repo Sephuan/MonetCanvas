@@ -1,15 +1,9 @@
 package com.sephuan.monetcanvas.ui.navigation
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,9 +11,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -50,219 +42,107 @@ fun MonetNavGraph(
 ) {
     var cachedWallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
     var cachedWallpaperId by remember { mutableLongStateOf(-1L) }
-
-    // ★ 缓存调整参数，预览页传给全屏页
     var cachedAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    NavHost(
+        navController = navController,
+        startDestination = Routes.HOME,
+        modifier = Modifier.fillMaxSize()
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = Routes.HOME,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // ━━━━━ 主页 ━━━━━
-            composable(route = Routes.HOME) {
-                ScreenContainer {
-                    HomeScreen(
-                        onWallpaperClick = { wallpaper ->
-                            cachedWallpaper = wallpaper
-                            cachedWallpaperId = wallpaper.id
-                            cachedAdjustment = ImageAdjustment.DEFAULT
-                            navController.navigate(Routes.preview(wallpaper.id))
-                        },
-                        onOpenSettings = {
-                            navController.navigate(Routes.SETTINGS)
-                        }
+        composable(Routes.HOME) {
+            HomeScreen(
+                onWallpaperClick = { wallpaper ->
+                    cachedWallpaper = wallpaper
+                    cachedWallpaperId = wallpaper.id
+                    navController.navigate(Routes.preview(wallpaper.id))
+                },
+                onOpenSettings = {
+                    navController.navigate(Routes.SETTINGS)
+                }
+            )
+        }
+
+        composable(
+            route = Routes.PREVIEW,
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
+            val viewModel: NavPreviewViewModel = hiltViewModel()
+
+            var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
+            var loadFailed by remember { mutableStateOf(false) }
+            var isLoading by remember { mutableStateOf(true) }
+
+            LaunchedEffect(wallpaperId) {
+                isLoading = true
+                if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
+                    wallpaper = cachedWallpaper
+                } else {
+                    val loaded = viewModel.loadWallpaper(wallpaperId)
+                    if (loaded != null) {
+                        wallpaper = loaded
+                        cachedWallpaper = loaded
+                        cachedWallpaperId = wallpaperId
+                    } else {
+                        loadFailed = true
+                    }
+                }
+                isLoading = false
+            }
+
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
                     )
                 }
-            }
-
-            // ━━━━━ 预览页 ━━━━━
-            composable(
-                route = Routes.PREVIEW,
-                arguments = listOf(
-                    navArgument("wallpaperId") { type = NavType.LongType }
-                )
-            ) { backStackEntry ->
-                val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
-                val viewModel: NavPreviewViewModel = hiltViewModel()
-
-                var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
-                var loadFailed by remember { mutableStateOf(false) }
-
-                LaunchedEffect(wallpaperId) {
-                    loadFailed = false
-                    wallpaper = null
-
-                    if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
-                        wallpaper = cachedWallpaper
-                    } else {
-                        val loaded = viewModel.loadWallpaper(wallpaperId)
-                        if (loaded != null) {
-                            wallpaper = loaded
-                            cachedWallpaper = loaded
-                            cachedWallpaperId = loaded.id
-                        } else {
-                            loadFailed = true
-                        }
-                    }
+                loadFailed || wallpaper == null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
                 }
-
-                ScreenContainer {
-                    when {
-                        loadFailed -> {
-                            RecoveryScreen(
-                                message = "壁纸不存在或已删除",
-                                onGoHome = {
-                                    navController.navigate(Routes.HOME) {
-                                        popUpTo(0) { inclusive = true }
-                                        launchSingleTop = true
-                                    }
-                                }
-                            )
+                else -> {
+                    PreviewScreen(
+                        wallpaper = wallpaper!!,
+                        onBack = { navController.popBackStack() },
+                        onFullScreenClick = { adjustment ->
+                            cachedAdjustment = adjustment
+                            navController.navigate(Routes.fullScreen(wallpaperId))
                         }
-
-                        wallpaper == null -> {
-                            LoadingScreen()
-                        }
-
-                        else -> {
-                            PreviewScreen(
-                                wallpaper = wallpaper!!,
-                                onBack = { navController.popBackStack() },
-                                onFullScreenClick = { adjustment ->
-                                    // ★ 缓存调整参数再导航
-                                    cachedAdjustment = adjustment
-                                    navController.navigate(Routes.fullScreen(wallpaperId))
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ━━━━━ 全屏预览 ━━━━━
-            composable(
-                route = Routes.FULL_SCREEN,
-                arguments = listOf(
-                    navArgument("wallpaperId") { type = NavType.LongType }
-                )
-            ) { backStackEntry ->
-                val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
-                val viewModel: NavPreviewViewModel = hiltViewModel()
-
-                var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
-                var loadFailed by remember { mutableStateOf(false) }
-
-                LaunchedEffect(wallpaperId) {
-                    loadFailed = false
-                    wallpaper = null
-
-                    if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
-                        wallpaper = cachedWallpaper
-                    } else {
-                        val loaded = viewModel.loadWallpaper(wallpaperId)
-                        if (loaded != null) {
-                            wallpaper = loaded
-                            cachedWallpaper = loaded
-                            cachedWallpaperId = loaded.id
-                        } else {
-                            loadFailed = true
-                        }
-                    }
-                }
-
-                when {
-                    loadFailed -> {
-                        RecoveryScreen(
-                            message = "壁纸不存在或已删除",
-                            onGoHome = {
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(0) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
-                        )
-                    }
-
-                    wallpaper == null -> {
-                        LoadingScreen()
-                    }
-
-                    else -> {
-                        // ★ 传入缓存的调整参数
-                        FullScreenPreview(
-                            wallpaper = wallpaper!!,
-                            adjustment = cachedAdjustment,
-                            onDismiss = { navController.popBackStack() }
-                        )
-                    }
-                }
-            }
-
-            // ━━━━━ 设置页 ━━━━━
-            composable(route = Routes.SETTINGS) {
-                ScreenContainer {
-                    SettingsScreen(
-                        onBack = { navController.popBackStack() }
                     )
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun ScreenContainer(
-    content: @Composable () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        content()
-    }
-}
+        composable(
+            route = Routes.FULL_SCREEN,
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
+            val wallpaper = cachedWallpaper
+            if (wallpaper != null && wallpaper.id == wallpaperId) {
+                FullScreenPreview(
+                    wallpaper = wallpaper,
+                    adjustment = cachedAdjustment,
+                    onDismiss = { navController.popBackStack() }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                )
+            }
+        }
 
-@Composable
-private fun LoadingScreen() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "加载中...",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun RecoveryScreen(
-    message: String,
-    onGoHome: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = message,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onGoHome) {
-            Text("返回主页")
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

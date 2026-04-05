@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.sephuan.monetcanvas"
-        minSdk = 31
+        minSdk = 33   // ★ 改为 33（Android 13），预测返回必需
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
@@ -38,7 +38,6 @@ android {
     }
 }
 
-// 修复了之前的 kotlinOptions 警告
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -46,10 +45,7 @@ kotlin {
 }
 
 dependencies {
-    // Core
     implementation(libs.androidx.core.ktx)
-
-    // Compose BOM
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
@@ -58,46 +54,32 @@ dependencies {
     implementation(libs.compose.material.icons)
     debugImplementation(libs.compose.ui.tooling)
 
-    // Material 3
     implementation(libs.material3)
-
-    // Activity & Navigation
     implementation(libs.activity.compose)
-    implementation(libs.navigation.compose)
-
-    // Lifecycle
+    implementation(libs.navigation.compose)   // 确保 >= 2.8.7
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
 
-    // Room 数据库
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // DataStore 偏好存储
     implementation(libs.datastore.preferences)
-
-    // WorkManager 自动轮换
     implementation(libs.work.runtime.ktx)
 
-    // Coil 图片加载
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
 
-    // Palette 颜色提取
     implementation(libs.palette.ktx)
 
-    // Hilt 依赖注入
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
 
-    // Media3 视频播放
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
 
-    // Accompanist 系统UI控制
     implementation(libs.accompanist.systemuicontroller)
 }
