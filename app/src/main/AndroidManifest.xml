@@ -13,7 +13,7 @@
     <!-- Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 某些 ROM 对动态服务更敏感，先保留 -->
+    <!-- 某些 ROM 对动态服务更敏感 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <uses-feature
@@ -35,7 +35,6 @@
             android:exported="true"
             android:theme="@style/Theme.MonetCanvas"
             android:enableOnBackInvokedCallback="true"
-            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -60,4 +59,5 @@
         </service>
 
     </application>
+
 </manifest>

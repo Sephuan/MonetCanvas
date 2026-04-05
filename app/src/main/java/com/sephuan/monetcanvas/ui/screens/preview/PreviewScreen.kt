@@ -73,7 +73,6 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isExiting by remember { mutableStateOf(false) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
-    var adjustmentLoaded by remember { mutableStateOf(false) }
 
     var backProgress by remember { mutableFloatStateOf(0f) }
 
@@ -107,9 +106,7 @@ fun PreviewScreen(
                 backProgress = event.progress
             }
             backProgress = 1f
-            if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
-                viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
-            }
+            // ★ 不在这里保存调整参数，避免干扰返回动画
             player?.clearVideoSurface()
             player?.pause()
             player?.stop()
@@ -146,12 +143,7 @@ fun PreviewScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    player?.pause()
-                    if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
-                        viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
-                    }
-                }
+                Lifecycle.Event.ON_PAUSE -> player?.pause()
                 Lifecycle.Event.ON_STOP -> player?.pause()
                 Lifecycle.Event.ON_RESUME -> {
                     player?.play()
@@ -178,7 +170,6 @@ fun PreviewScreen(
         if (wallpaper.type == WallpaperType.STATIC) {
             imageAdjustment = viewModel.loadAdjustmentForWallpaper(wallpaper)
         }
-        adjustmentLoaded = true
     }
 
     LaunchedEffect(isExiting) {
@@ -189,6 +180,7 @@ fun PreviewScreen(
     }
 
     fun safeBack() {
+        // ★ 退出前保存调整参数（只保存一次）
         if (wallpaper.type == WallpaperType.STATIC && imageAdjustment.hasAnyAdjustment) {
             viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
         }
@@ -200,7 +192,6 @@ fun PreviewScreen(
         isExiting = true
     }
 
-    // ★ 打开全屏前保存调整参数并传递
     fun openFullScreen() {
         if (wallpaper.type == WallpaperType.STATIC) {
             viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)

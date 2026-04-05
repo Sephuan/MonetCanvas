@@ -1,5 +1,6 @@
 package com.sephuan.monetcanvas.util
 
+import android.app.Activity
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
@@ -26,9 +27,8 @@ object LiveWallpaperSetter {
     }
 
     /**
-     * ★ 第1步：保存到【预览配置】
-     *   桌面实例不会响应这些 key，所以桌面不会变化！
-     *   只有系统确认页的预览实例会读取这些配置
+     * 保存到【预览配置】
+     * 只有系统动态壁纸预览页实例会读取这些配置。
      */
     fun savePendingConfig(
         context: Context,
@@ -63,8 +63,7 @@ object LiveWallpaperSetter {
     }
 
     /**
-     * ★ 第2步（用户确认后调用）：把预览配置提升为正式配置
-     *   此时桌面实例才会响应，重新加载视频 + 取色
+     * 用户确认后：把预览配置提升为正式配置
      */
     fun promotePendingToActive(context: Context) {
         val prefs = context.getSharedPreferences(
@@ -92,12 +91,9 @@ object LiveWallpaperSetter {
             .putLong(LiveWallpaperService.KEY_CONFIG_VERSION, currentVersion + 1)
             .commit()
 
-        Log.d(TAG, "★ 预览配置已提升为正式配置: path=$pendingPath, version=${currentVersion + 1}")
+        Log.d(TAG, "预览配置已提升为正式配置: path=$pendingPath, version=${currentVersion + 1}")
     }
 
-    /**
-     * 检查是否有待确认的预览配置
-     */
     fun hasPendingConfig(context: Context): Boolean {
         val prefs = context.getSharedPreferences(
             LiveWallpaperService.PREFS_NAME,
@@ -106,9 +102,6 @@ object LiveWallpaperSetter {
         return !prefs.getString(LiveWallpaperService.KEY_PENDING_PATH, null).isNullOrBlank()
     }
 
-    /**
-     * 清除预览配置（用户取消或超时）
-     */
     fun clearPendingConfig(context: Context) {
         val prefs = context.getSharedPreferences(
             LiveWallpaperService.PREFS_NAME,
@@ -125,56 +118,57 @@ object LiveWallpaperSetter {
     }
 
     /**
-     * 打开系统确认页
+     * ★ 修复点：
+     * 1. 不再加 FLAG_ACTIVITY_NEW_TASK
+     * 2. 不再自动 fallback 到 chooser
+     * 3. 只走标准系统动态壁纸预览页
+     *
+     * 这样系统在点击“设置壁纸”后，才能继续自己的第二步选择页流程。
      */
     fun tryActivate(context: Context): Boolean {
-        val component = ComponentName(context, LiveWallpaperService::class.java)
+        val activity = context as? Activity
+        if (activity == null) {
+            Log.e(TAG, "tryActivate 需要 Activity context，当前不是 Activity")
+            return false
+        }
 
-        val directIntent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+        val component = ComponentName(activity, LiveWallpaperService::class.java)
+
+        val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
             putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        if (safeStart(context, directIntent)) {
-            Log.d(TAG, "✓ ACTION_CHANGE_LIVE_WALLPAPER 成功")
-            return true
         }
 
-        val chooserIntent = Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            activity.startActivity(intent)
+            Log.d(TAG, "✓ ACTION_CHANGE_LIVE_WALLPAPER 启动成功")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "✗ ACTION_CHANGE_LIVE_WALLPAPER 启动失败", e)
+            false
         }
-        if (safeStart(context, chooserIntent)) {
-            Log.d(TAG, "✓ ACTION_LIVE_WALLPAPER_CHOOSER 成功")
-            return true
-        }
-
-        Log.e(TAG, "✗ 所有 Intent 均失败")
-        return false
     }
 
     fun openAppSettings(context: Context) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         }
+
         try {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "跳转应用设置失败", e)
             try {
-                context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            } catch (_: Exception) {}
-        }
-    }
-
-    private fun safeStart(context: Context, intent: Intent): Boolean {
-        return try {
-            context.startActivity(intent)
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "启动失败: ${intent.action}", e)
-            false
+                val fallback = Intent(Settings.ACTION_SETTINGS).apply {
+                    if (context !is Activity) {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
+                context.startActivity(fallback)
+            } catch (_: Exception) {
+            }
         }
     }
 }

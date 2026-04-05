@@ -33,17 +33,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sephuan.monetcanvas.data.datastore.SettingsDataStore
 import com.sephuan.monetcanvas.ui.navigation.MonetNavGraph
@@ -71,7 +74,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -91,8 +93,11 @@ class MainActivity : ComponentActivity() {
                 initialValue = SettingsDataStore.DARK_MODE_SYSTEM
             )
 
-            // ★ 不再在这里调用 SystemBarsEffect
-            //   所有系统栏设置已经集中到 Theme.kt 的 SideEffect 中
+            val isDark = when (darkMode) {
+                SettingsDataStore.DARK_MODE_DARK -> true
+                SettingsDataStore.DARK_MODE_LIGHT -> false
+                else -> isSystemInDarkTheme()
+            }
 
             MonetCanvasTheme(
                 appSeedColor = appSeedColor,
@@ -100,6 +105,8 @@ class MainActivity : ComponentActivity() {
                 appColorMode = appColorMode,
                 darkModeSetting = darkMode
             ) {
+                StableSystemBars(isDark = isDark)
+
                 var onboardingStep by remember {
                     mutableIntStateOf(
                         if (isFirstLaunch(context)) STEP_WELCOME else STEP_NONE
@@ -142,6 +149,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // ★ 修改点：引导页面只保留“前往设置”和“跳过”，去掉“激活”按钮
                 if (onboardingStep == STEP_LIVE_WP) {
                     val isActive = remember {
                         LiveWallpaperSetter.isOurLiveWallpaperActive(context)
@@ -153,10 +161,6 @@ class MainActivity : ComponentActivity() {
                         LiveWallpaperGuideDialog(
                             onGoSettings = {
                                 LiveWallpaperSetter.openAppSettings(context)
-                                onboardingStep = STEP_NONE
-                            },
-                            onTryActivate = {
-                                LiveWallpaperSetter.tryActivate(context)
                                 onboardingStep = STEP_NONE
                             },
                             onSkip = {
@@ -181,6 +185,23 @@ class MainActivity : ComponentActivity() {
             .edit()
             .putBoolean(KEY_FIRST_LAUNCH, false)
             .apply()
+    }
+}
+
+@Composable
+private fun StableSystemBars(isDark: Boolean) {
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity ?: return
+    val window = activity.window
+    val bg = MaterialTheme.colorScheme.background.toArgb()
+
+    SideEffect {
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !isDark
+        controller.isAppearanceLightNavigationBars = !isDark
     }
 }
 
@@ -253,7 +274,6 @@ private fun NotificationPermissionDialog(
 @Composable
 private fun LiveWallpaperGuideDialog(
     onGoSettings: () -> Unit,
-    onTryActivate: () -> Unit,
     onSkip: () -> Unit
 ) {
     AlertDialog(
@@ -282,14 +302,6 @@ private fun LiveWallpaperGuideDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onTryActivate,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
-                    Text(" " + stringResource(R.string.live_wp_setup_enable))
-                }
-
                 OutlinedButton(
                     onClick = onGoSettings,
                     modifier = Modifier.fillMaxWidth()

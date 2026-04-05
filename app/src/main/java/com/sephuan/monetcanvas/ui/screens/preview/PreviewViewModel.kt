@@ -31,8 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-// ━━━━━ 状态枚举 ━━━━━
-
 enum class ApplyState {
     IDLE,
     APPLYING,
@@ -56,31 +54,26 @@ class PreviewViewModel @Inject constructor(
         private const val TAG = "PreviewVM"
     }
 
-    // ━━━━━ 颜色分析 ━━━━━
-
+    // 颜色分析
     private val _extractedColors = MutableStateFlow<ExtractedColors?>(null)
     val extractedColors: StateFlow<ExtractedColors?> = _extractedColors.asStateFlow()
 
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
 
-    // ━━━━━ 设置壁纸状态 ━━━━━
-
+    // 设置壁纸状态
     private val _applyState = MutableStateFlow(ApplyState.IDLE)
     val applyState: StateFlow<ApplyState> = _applyState.asStateFlow()
 
     private val _liveWpResult = MutableStateFlow(LiveWpResult.IDLE)
     val liveWpResult: StateFlow<LiveWpResult> = _liveWpResult.asStateFlow()
 
-    // ━━━━━ 返回横幅 ━━━━━
-
+    // 返回横幅
     private val _showBanner = MutableStateFlow(false)
     val showBanner: StateFlow<Boolean> = _showBanner.asStateFlow()
 
     private val _bannerSuccess = MutableStateFlow(false)
     val bannerSuccess: StateFlow<Boolean> = _bannerSuccess.asStateFlow()
-
-    // ━━━━━ 状态清理 ━━━━━
 
     fun clearLiveWpResult() {
         _liveWpResult.value = LiveWpResult.IDLE
@@ -94,19 +87,15 @@ class PreviewViewModel @Inject constructor(
         _showBanner.value = false
     }
 
-    // ━━━━━ 取色规则 ━━━━━
-
+    // 取色规则
     suspend fun loadRuleForWallpaper(wallpaper: WallpaperEntity): MonetRule {
         return MonetRule(
-            framePosition = runCatching {
-                enumValueOf<FramePickPosition>(wallpaper.framePosition)
-            }.getOrDefault(FramePickPosition.FIRST),
-            colorRegion = runCatching {
-                enumValueOf<ColorRegion>(wallpaper.colorRegion)
-            }.getOrDefault(ColorRegion.FULL_FRAME),
-            tonePreference = runCatching {
-                enumValueOf<TonePreference>(wallpaper.tonePreference)
-            }.getOrDefault(TonePreference.AUTO),
+            framePosition = runCatching { enumValueOf<FramePickPosition>(wallpaper.framePosition) }
+                .getOrDefault(FramePickPosition.FIRST),
+            colorRegion = runCatching { enumValueOf<ColorRegion>(wallpaper.colorRegion) }
+                .getOrDefault(ColorRegion.FULL_FRAME),
+            tonePreference = runCatching { enumValueOf<TonePreference>(wallpaper.tonePreference) }
+                .getOrDefault(TonePreference.AUTO),
             manualOverrideColor = wallpaper.manualColor
         )
     }
@@ -121,13 +110,11 @@ class PreviewViewModel @Inject constructor(
         repository.update(updated)
     }
 
-    // ━━━━━ ★ 图片调整参数：加载 ━━━━━
-
+    // 图片调整参数
     fun loadAdjustmentForWallpaper(wallpaper: WallpaperEntity): ImageAdjustment {
         return ImageAdjustment(
-            fillMode = runCatching {
-                enumValueOf<FillMode>(wallpaper.fillMode)
-            }.getOrDefault(FillMode.COVER),
+            fillMode = runCatching { enumValueOf<FillMode>(wallpaper.fillMode) }
+                .getOrDefault(FillMode.COVER),
             mirrorHorizontal = wallpaper.mirrorHorizontal,
             mirrorVertical = wallpaper.mirrorVertical,
             brightness = wallpaper.brightness,
@@ -139,8 +126,6 @@ class PreviewViewModel @Inject constructor(
             scale = wallpaper.adjustScale
         )
     }
-
-    // ━━━━━ ★ 图片调整参数：保存 ━━━━━
 
     fun saveAdjustmentForWallpaper(wallpaper: WallpaperEntity, adj: ImageAdjustment) {
         viewModelScope.launch {
@@ -161,8 +146,7 @@ class PreviewViewModel @Inject constructor(
         }
     }
 
-    // ━━━━━ 颜色分析 ━━━━━
-
+    // 颜色分析
     fun analyzeColors(wallpaper: WallpaperEntity, rule: MonetRule) {
         viewModelScope.launch {
             _isAnalyzing.value = true
@@ -186,8 +170,7 @@ class PreviewViewModel @Inject constructor(
         }
     }
 
-    // ━━━━━ ★ 设为壁纸（支持调整参数）━━━━━
-
+    // 设为壁纸（支持调整参数）
     fun applyWallpaper(
         context: Context,
         wallpaper: WallpaperEntity,
@@ -202,7 +185,7 @@ class PreviewViewModel @Inject constructor(
         _applyState.value = ApplyState.APPLYING
 
         viewModelScope.launch {
-            // 先保存调整参数
+            // 先保存调整参数（静态壁纸）
             if (wallpaper.type == WallpaperType.STATIC && adjustment.hasAnyAdjustment) {
                 saveAdjustmentForWallpaper(wallpaper, adjustment)
             }
@@ -233,13 +216,11 @@ class PreviewViewModel @Inject constructor(
             repository.markAsUsed(wallpaper.id)
             _applyState.value = ApplyState.SUCCESS
             Toast.makeText(context, "✓", Toast.LENGTH_SHORT).show()
-
             delay(1500)
             _applyState.value = ApplyState.IDLE
         } else {
             _applyState.value = ApplyState.FAILED
             Toast.makeText(context, "设置失败", Toast.LENGTH_SHORT).show()
-
             delay(1500)
             _applyState.value = ApplyState.IDLE
         }
@@ -275,7 +256,8 @@ class PreviewViewModel @Inject constructor(
         val launched = LiveWallpaperSetter.tryActivate(context)
 
         if (launched) {
-            repository.markAsUsed(wallpaper.id)
+            // ★ 关键修改：不再立即标记为 WAITING_CONFIRM，因为系统第二页还未结束
+            // 让 onResume 的回检继续处理，但不要提前假设已激活
             _applyState.value = ApplyState.WAITING_CONFIRM
             Log.d(TAG, "✓ 已跳转系统确认页")
         } else {
@@ -285,22 +267,24 @@ class PreviewViewModel @Inject constructor(
         }
     }
 
-    // ━━━━━ 从系统确认页返回后的回检 ━━━━━
-
+    // ★ 从系统确认页返回后的回检（去掉自动提升，只做状态更新）
     fun onReturnFromSystemPage(
         context: Context,
         wallpaper: WallpaperEntity,
         rule: MonetRule
     ) {
+        // 只有当前处于等待确认状态才处理
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
 
         viewModelScope.launch {
-            delay(600)
+            // 延迟等待系统真正完成设置
+            delay(800)
 
             val isActive = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
             Log.d(TAG, "从系统页返回: isActive=$isActive")
 
             if (isActive && LiveWallpaperSetter.hasPendingConfig(context)) {
+                // 用户确认了
                 LiveWallpaperSetter.promotePendingToActive(context)
                 Log.d(TAG, "★ 配置已提升")
 
@@ -308,6 +292,7 @@ class PreviewViewModel @Inject constructor(
                 _showBanner.value = true
                 _bannerSuccess.value = false
 
+                // 重新分析颜色
                 analyzeColors(wallpaper, rule)
 
                 delay(2000)
@@ -316,19 +301,20 @@ class PreviewViewModel @Inject constructor(
 
                 delay(3000)
                 _showBanner.value = false
-
             } else if (LiveWallpaperSetter.hasPendingConfig(context)) {
+                // 用户取消了
                 LiveWallpaperSetter.clearPendingConfig(context)
                 Log.d(TAG, "用户取消了设置")
                 _applyState.value = ApplyState.IDLE
+                Toast.makeText(context, "已取消", Toast.LENGTH_SHORT).show()
             } else {
+                // 未知情况，重置状态
                 _applyState.value = ApplyState.IDLE
             }
         }
     }
 
-    // ━━━━━ 删除壁纸 ━━━━━
-
+    // 删除壁纸
     fun deleteWallpaper(
         context: Context,
         wallpaper: WallpaperEntity,
@@ -359,8 +345,6 @@ class PreviewViewModel @Inject constructor(
             }
         }
     }
-
-    // ━━━━━ 工具 ━━━━━
 
     private fun Color.toArgbInt(): Int {
         return android.graphics.Color.argb(
