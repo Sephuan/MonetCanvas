@@ -41,16 +41,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.MediaItem
@@ -63,6 +65,8 @@ import com.sephuan.monetcanvas.data.model.FillMode
 import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 fun FullScreenPreview(
@@ -72,6 +76,11 @@ fun FullScreenPreview(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.toInt()
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.toInt()
 
     var showControls by remember { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -108,7 +117,6 @@ fun FullScreenPreview(
         }
     }
 
-    // Predictive back
     PredictiveBackHandler(enabled = true) { progress ->
         try {
             progress.collectLatest { event ->
@@ -127,11 +135,10 @@ fun FullScreenPreview(
         }
     }
 
-    // 播放器（仅动态壁纸）
     DisposableEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player = ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri("file://${wallpaper.filePath}".toUri()))
+                setMediaItem(MediaItem.fromUri("file://${wallpaper.filePath}"))
                 repeatMode = Player.REPEAT_MODE_ALL
                 volume = 0f
                 prepare()
@@ -158,7 +165,7 @@ fun FullScreenPreview(
         onDismiss()
     }
 
-    // ━━━━━ 主体 ━━━━━
+    // 主体
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -188,13 +195,13 @@ fun FullScreenPreview(
         ) {
             when (wallpaper.type) {
                 WallpaperType.STATIC -> {
-                    // ★ 和预览页完全一致的渲染
                     StaticFullScreenContent(
                         wallpaper = wallpaper,
-                        adjustment = adjustment
+                        adjustment = adjustment,
+                        screenWidth = screenWidthPx,
+                        screenHeight = screenHeightPx
                     )
                 }
-
                 WallpaperType.LIVE -> {
                     player?.let { exoPlayer ->
                         AndroidView(
@@ -283,22 +290,42 @@ fun FullScreenPreview(
     }
 }
 
-// ━━━━━ ★ 静态壁纸全屏渲染（和 PreviewMediaSection 完全一致）━━━━━
-
 @Composable
 private fun StaticFullScreenContent(
     wallpaper: WallpaperEntity,
-    adjustment: ImageAdjustment
+    adjustment: ImageAdjustment,
+    screenWidth: Int,
+    screenHeight: Int
 ) {
+    val imageWidth = wallpaper.width
+    val imageHeight = wallpaper.height
+    if (imageWidth <= 0 || imageHeight <= 0) return
+
+    val imageAspect = imageWidth.toFloat() / imageHeight
+    val screenAspect = screenWidth.toFloat() / screenHeight
+
+    val baseScale = when (adjustment.fillMode) {
+        FillMode.COVER -> max(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
+        FillMode.FIT, FillMode.FREE -> min(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
+    }
+
+    val finalScale = baseScale * adjustment.scale
+    val scaledWidth = imageWidth * finalScale
+    val scaledHeight = imageHeight * finalScale
+
+    val initialOffsetX = (screenWidth - scaledWidth) / 2f
+    val initialOffsetY = (screenHeight - scaledHeight) / 2f
+
+    val offsetX = initialOffsetX + adjustment.offsetX
+    val offsetY = initialOffsetY + adjustment.offsetY
+
     val contentScale = when (adjustment.fillMode) {
         FillMode.COVER -> ContentScale.Crop
-        FillMode.FIT -> ContentScale.Fit
-        FillMode.FREE -> ContentScale.Fit
+        else -> ContentScale.Fit
     }
 
     val colorFilter = buildFullScreenColorFilter(adjustment)
 
-    // 背景色画布
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -315,17 +342,14 @@ private fun StaticFullScreenContent(
                 .graphicsLayer {
                     val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
                     val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
-
-                    scaleX = adjustment.scale * mirrorX
-                    scaleY = adjustment.scale * mirrorY
-                    translationX = adjustment.offsetX
-                    translationY = adjustment.offsetY
+                    scaleX = finalScale * mirrorX
+                    scaleY = finalScale * mirrorY
+                    translationX = offsetX
+                    translationY = offsetY
                 }
         )
     }
 }
-
-// ━━━━━ 色彩滤镜（和 PreviewMediaSection 完全一致）━━━━━
 
 private fun buildFullScreenColorFilter(adjustment: ImageAdjustment): ColorFilter? {
     val b = adjustment.brightness

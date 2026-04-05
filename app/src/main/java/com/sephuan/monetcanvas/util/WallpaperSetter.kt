@@ -20,10 +20,6 @@ object WallpaperSetter {
 
     private const val TAG = "WallpaperSetter"
 
-    /**
-     * 设置静态壁纸（支持图片调整参数）
-     * @param target 1=桌面, 2=锁屏, 3=两者
-     */
     fun setStaticWallpaper(
         context: Context,
         imagePath: String,
@@ -57,23 +53,10 @@ object WallpaperSetter {
             )
 
             when (target) {
-                1 -> {
-                    wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                    Log.d(TAG, "✓ 已设置桌面壁纸 (${finalBitmap.width}x${finalBitmap.height})")
-                }
-                2 -> {
-                    wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_LOCK)
-                    Log.d(TAG, "✓ 已设置锁屏壁纸")
-                }
-                3 -> {
-                    wm.setBitmap(
-                        finalBitmap, null, true,
-                        WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-                    )
-                    Log.d(TAG, "✓ 已设置桌面+锁屏壁纸")
-                }
+                1 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                2 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                3 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
                 else -> {
-                    Log.e(TAG, "未知 target: $target")
                     originalBitmap.recycle()
                     if (finalBitmap !== originalBitmap) finalBitmap.recycle()
                     return false
@@ -89,27 +72,18 @@ object WallpaperSetter {
         }
     }
 
-    /**
-     * ★ 核心：应用所有调整参数，生成最终 Bitmap
-     *
-     * 流程：
-     * 1. 先翻转原图（如果需要）→ 得到内容正确的图
-     * 2. 在画布上绘制背景色
-     * 3. 根据填充模式计算缩放和位置
-     * 4. 应用色彩滤镜
-     * 5. 绘制到画布
-     */
     private fun applyAdjustments(
         original: Bitmap,
         adjustment: ImageAdjustment,
         targetWidth: Int,
         targetHeight: Int
     ): Bitmap {
+        // 无调整时直接裁剪铺满
         if (!adjustment.hasAnyAdjustment) {
             return cropToScreen(original, targetWidth, targetHeight)
         }
 
-        // ★ 第1步：先翻转原图（和预览行为一致）
+        // 1. 翻转
         val flipped = applyMirror(original, adjustment.mirrorHorizontal, adjustment.mirrorVertical)
 
         val srcW = flipped.width.toFloat()
@@ -117,136 +91,97 @@ object WallpaperSetter {
         val dstW = targetWidth.toFloat()
         val dstH = targetHeight.toFloat()
 
-        // 第2步：创建画布 + 填充背景色
+        // 2. 创建画布 + 背景色
         val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
-
-        val bgColor = adjustment.backgroundColor
         val bgArgb = android.graphics.Color.argb(
-            (bgColor.alpha * 255).toInt(),
-            (bgColor.red * 255).toInt(),
-            (bgColor.green * 255).toInt(),
-            (bgColor.blue * 255).toInt()
+            (adjustment.backgroundColor.alpha * 255).toInt(),
+            (adjustment.backgroundColor.red * 255).toInt(),
+            (adjustment.backgroundColor.green * 255).toInt(),
+            (adjustment.backgroundColor.blue * 255).toInt()
         )
         canvas.drawColor(bgArgb)
 
-        // 第3步：计算缩放和位置（不再处理镜像，因为图已经翻好了）
         val matrix = Matrix()
 
-        when (adjustment.fillMode) {
-            FillMode.COVER -> {
-                val scale = maxOf(dstW / srcW, dstH / srcH) * adjustment.scale
-                val scaledW = srcW * scale
-                val scaledH = srcH * scale
-                val tx = (dstW - scaledW) / 2f + adjustment.offsetX
-                val ty = (dstH - scaledH) / 2f + adjustment.offsetY
-                matrix.setScale(scale, scale)
-                matrix.postTranslate(tx, ty)
-            }
-
-            FillMode.FIT -> {
-                val scale = minOf(dstW / srcW, dstH / srcH) * adjustment.scale
-                val scaledW = srcW * scale
-                val scaledH = srcH * scale
-                val tx = (dstW - scaledW) / 2f + adjustment.offsetX
-                val ty = (dstH - scaledH) / 2f + adjustment.offsetY
-                matrix.setScale(scale, scale)
-                matrix.postTranslate(tx, ty)
-            }
-
-            FillMode.FREE -> {
-                val baseScale = minOf(dstW / srcW, dstH / srcH)
-                val finalScale = baseScale * adjustment.scale
-                val scaledW = srcW * finalScale
-                val scaledH = srcH * finalScale
-                val tx = (dstW - scaledW) / 2f + adjustment.offsetX
-                val ty = (dstH - scaledH) / 2f + adjustment.offsetY
-                matrix.setScale(finalScale, finalScale)
-                matrix.postTranslate(tx, ty)
-            }
+        // ★ 基准缩放（与预览完全一致）
+        val baseScale = when (adjustment.fillMode) {
+            FillMode.COVER -> maxOf(dstW / srcW, dstH / srcH)
+            FillMode.FIT, FillMode.FREE -> minOf(dstW / srcW, dstH / srcH)
         }
 
-        // 第4步：色彩滤镜
+        // ★ 有效缩放：覆盖/填充模式强制 scale = 1，自由模式使用用户缩放
+        val effectiveScale = when (adjustment.fillMode) {
+            FillMode.COVER, FillMode.FIT -> 1f
+            FillMode.FREE -> adjustment.scale
+        }
+
+        val finalScale = baseScale * effectiveScale
+        val scaledW = srcW * finalScale
+        val scaledH = srcH * finalScale
+
+        // 居中偏移
+        val centerX = (dstW - scaledW) / 2f
+        val centerY = (dstH - scaledH) / 2f
+
+        // ★ 应用用户偏移（根据模式限制方向）
+        val offsetX = when (adjustment.fillMode) {
+            FillMode.COVER -> centerX + adjustment.offsetX
+            FillMode.FIT -> centerX
+            FillMode.FREE -> centerX + adjustment.offsetX
+        }
+
+        val offsetY = when (adjustment.fillMode) {
+            FillMode.COVER -> centerY
+            FillMode.FIT -> centerY + adjustment.offsetY
+            FillMode.FREE -> centerY + adjustment.offsetY
+        }
+
+        matrix.setScale(finalScale, finalScale)
+        matrix.postTranslate(offsetX, offsetY)
+
+        // 3. 色彩滤镜
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         val colorFilter = buildColorFilter(adjustment)
         if (colorFilter != null) {
             paint.colorFilter = colorFilter
         }
 
-        // 第5步：绘制
         canvas.drawBitmap(flipped, matrix, paint)
 
-        // 清理翻转的临时 Bitmap
-        if (flipped !== original) {
-            flipped.recycle()
-        }
-
+        if (flipped !== original) flipped.recycle()
         return result
     }
 
-    /**
-     * ★ 翻转原图（先翻好再处理位置，和预览行为一致）
-     */
-    private fun applyMirror(
-        bitmap: Bitmap,
-        mirrorH: Boolean,
-        mirrorV: Boolean
-    ): Bitmap {
+    private fun applyMirror(bitmap: Bitmap, mirrorH: Boolean, mirrorV: Boolean): Bitmap {
         if (!mirrorH && !mirrorV) return bitmap
-
         val matrix = Matrix()
         val sx = if (mirrorH) -1f else 1f
         val sy = if (mirrorV) -1f else 1f
         matrix.setScale(sx, sy, bitmap.width / 2f, bitmap.height / 2f)
-
-        return Bitmap.createBitmap(
-            bitmap, 0, 0,
-            bitmap.width, bitmap.height,
-            matrix, true
-        )
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    /**
-     * 居中裁剪（无调整时使用）
-     */
-    private fun cropToScreen(
-        bitmap: Bitmap,
-        targetWidth: Int,
-        targetHeight: Int
-    ): Bitmap {
+    private fun cropToScreen(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
         val srcW = bitmap.width.toFloat()
         val srcH = bitmap.height.toFloat()
-        val dstW = targetWidth.toFloat()
-        val dstH = targetHeight.toFloat()
-
-        val scale = maxOf(dstW / srcW, dstH / srcH)
+        val scale = maxOf(targetWidth / srcW, targetHeight / srcH)
         val scaledW = (srcW * scale).toInt()
         val scaledH = (srcH * scale).toInt()
-
-        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-
+        val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
         val x = ((scaledW - targetWidth) / 2).coerceAtLeast(0)
         val y = ((scaledH - targetHeight) / 2).coerceAtLeast(0)
         val w = targetWidth.coerceAtMost(scaledW - x)
         val h = targetHeight.coerceAtMost(scaledH - y)
-
-        val cropped = Bitmap.createBitmap(scaledBitmap, x, y, w, h)
-
-        if (scaledBitmap !== bitmap && scaledBitmap !== cropped) {
-            scaledBitmap.recycle()
-        }
-
+        val cropped = Bitmap.createBitmap(scaled, x, y, w, h)
+        if (scaled !== bitmap && scaled !== cropped) scaled.recycle()
         return cropped
     }
 
-    /**
-     * 色彩滤镜
-     */
     private fun buildColorFilter(adjustment: ImageAdjustment): ColorMatrixColorFilter? {
         val b = adjustment.brightness
         val c = adjustment.contrast
         val s = adjustment.saturation
-
         if (b == 0f && c == 0f && s == 0f) return null
 
         val brightnessOffset = b * 255f
@@ -281,16 +216,10 @@ object WallpaperSetter {
         return ColorMatrixColorFilter(result)
     }
 
-    /**
-     * 屏幕尺寸
-     */
     private fun getScreenSize(context: Context): Pair<Int, Int> {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
-
-        @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(metrics)
-
         return Pair(metrics.widthPixels, metrics.heightPixels)
     }
 }
