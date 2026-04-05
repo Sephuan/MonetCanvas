@@ -5,7 +5,6 @@ package com.sephuan.monetcanvas.ui.screens.preview
 import android.app.Activity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -41,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -64,7 +62,7 @@ import com.sephuan.monetcanvas.data.db.WallpaperEntity
 import com.sephuan.monetcanvas.data.model.FillMode
 import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.WallpaperType
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlin.math.max
 import kotlin.math.min
 
@@ -85,22 +83,20 @@ fun FullScreenPreview(
     var showControls by remember { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var isBackExecuted by remember { mutableStateOf(false) }
 
     val animatedProgress by animateFloatAsState(
         targetValue = backProgress,
-        animationSpec = tween(
-            durationMillis = if (backProgress == 0f) 180 else 0,
-            easing = FastOutSlowInEasing
-        ),
-        label = "predictiveBackProgress"
+        animationSpec = tween(durationMillis = 0),
+        label = "fullscreenBackProgress"
     )
 
-    val scale = 1f - (animatedProgress * 0.08f)
-    val contentAlpha = 1f - (animatedProgress * 0.12f)
-    val translateX = animatedProgress * 24f
-    val horizontalPadding = (animatedProgress * 18f).dp
-    val verticalPadding = (animatedProgress * 28f).dp
-    val cornerRadius = (animatedProgress * 28f).dp
+    val scale = 1f - (animatedProgress * 0.03f)
+    val contentAlpha = 1f - (animatedProgress * 0.05f)
+    val translateX = animatedProgress * 30f
+    val horizontalPadding = (animatedProgress * 12f).dp
+    val verticalPadding = (animatedProgress * 20f).dp
+    val cornerRadius = (animatedProgress * 20f).dp
 
     // 沉浸模式
     DisposableEffect(activity) {
@@ -117,12 +113,14 @@ fun FullScreenPreview(
         }
     }
 
-    PredictiveBackHandler(enabled = true) { progress ->
-        try {
-            progress.collectLatest { event ->
-                backProgress = event.progress
-            }
-            backProgress = 1f
+    // 跟手返回
+    PredictiveBackHandler(enabled = true) { backEventFlow ->
+        isBackExecuted = false
+        backEventFlow.collect { backEvent ->
+            backProgress = backEvent.progress
+        }
+        if (!isBackExecuted) {
+            isBackExecuted = true
             player?.run {
                 pause()
                 stop()
@@ -130,11 +128,18 @@ fun FullScreenPreview(
             }
             player = null
             onDismiss()
-        } catch (_: Throwable) {
+        }
+    }
+
+    // 重置标志
+    DisposableEffect(Unit) {
+        onDispose {
+            isBackExecuted = false
             backProgress = 0f
         }
     }
 
+    // 初始化播放器（仅动态壁纸）
     DisposableEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player = ExoPlayer.Builder(context).build().apply {
@@ -301,23 +306,34 @@ private fun StaticFullScreenContent(
     val imageHeight = wallpaper.height
     if (imageWidth <= 0 || imageHeight <= 0) return
 
-    val imageAspect = imageWidth.toFloat() / imageHeight
-    val screenAspect = screenWidth.toFloat() / screenHeight
-
     val baseScale = when (adjustment.fillMode) {
         FillMode.COVER -> max(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
         FillMode.FIT, FillMode.FREE -> min(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
     }
 
-    val finalScale = baseScale * adjustment.scale
+    val effectiveScale = when (adjustment.fillMode) {
+        FillMode.COVER, FillMode.FIT -> 1f
+        FillMode.FREE -> adjustment.scale
+    }
+
+    val finalScale = baseScale * effectiveScale
     val scaledWidth = imageWidth * finalScale
     val scaledHeight = imageHeight * finalScale
 
     val initialOffsetX = (screenWidth - scaledWidth) / 2f
     val initialOffsetY = (screenHeight - scaledHeight) / 2f
 
-    val offsetX = initialOffsetX + adjustment.offsetX
-    val offsetY = initialOffsetY + adjustment.offsetY
+    val offsetX = when (adjustment.fillMode) {
+        FillMode.COVER -> initialOffsetX + adjustment.offsetX
+        FillMode.FIT -> initialOffsetX
+        FillMode.FREE -> initialOffsetX + adjustment.offsetX
+    }
+
+    val offsetY = when (adjustment.fillMode) {
+        FillMode.COVER -> initialOffsetY
+        FillMode.FIT -> initialOffsetY + adjustment.offsetY
+        FillMode.FREE -> initialOffsetY + adjustment.offsetY
+    }
 
     val contentScale = when (adjustment.fillMode) {
         FillMode.COVER -> ContentScale.Crop

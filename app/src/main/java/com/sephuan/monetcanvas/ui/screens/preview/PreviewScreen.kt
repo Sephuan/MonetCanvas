@@ -2,7 +2,6 @@ package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -40,8 +39,7 @@ import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -74,21 +72,22 @@ fun PreviewScreen(
     var isExiting by remember { mutableStateOf(false) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
+    // 跟手返回进度
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var isBackExecuted by remember { mutableStateOf(false) }
 
+    // 动画立即跟随手指
     val animatedProgress by animateFloatAsState(
         targetValue = backProgress,
-        animationSpec = tween(
-            durationMillis = if (backProgress == 0f) 200 else 0,
-            easing = FastOutSlowInEasing
-        ),
+        animationSpec = tween(durationMillis = 0),
         label = "previewBackProgress"
     )
 
-    val scale = 1f - (animatedProgress * 0.06f)
-    val contentAlpha = 1f - (animatedProgress * 0.10f)
-    val translateX = animatedProgress * 80f
-    val cornerRadius = (animatedProgress * 24f).dp
+    // 柔和的变化系数（与设置页一致）
+    val scale = 1f - (animatedProgress * 0.03f)
+    val contentAlpha = 1f - (animatedProgress * 0.05f)
+    val translateX = animatedProgress * 30f
+    val cornerRadius = (animatedProgress * 20f).dp
 
     val currentApplyState by rememberUpdatedState(applyState)
     val currentRuleState by rememberUpdatedState(currentRule)
@@ -100,24 +99,34 @@ fun PreviewScreen(
         label = "applyAlpha"
     )
 
-    PredictiveBackHandler(enabled = !isApplying && !isWaitingConfirm) { progress ->
-        try {
-            progress.collectLatest { event ->
-                backProgress = event.progress
+    // 预测返回处理器：只更新进度，等待手势完成
+    PredictiveBackHandler(enabled = !isApplying && !isWaitingConfirm) { backEventFlow ->
+        isBackExecuted = false
+        backEventFlow.collect { backEvent ->
+            backProgress = backEvent.progress
+        }
+        if (!isBackExecuted) {
+            isBackExecuted = true
+            // 手势完成，执行返回
+            if (wallpaper.type == WallpaperType.STATIC && currentAdjustment.hasAnyAdjustment) {
+                viewModel.saveAdjustmentForWallpaper(wallpaper, currentAdjustment)
             }
-            backProgress = 1f
-            // ★ 不在这里保存调整参数，避免干扰返回动画
             player?.clearVideoSurface()
             player?.pause()
             player?.stop()
             player?.release()
             player = null
             isExiting = true
-        } catch (_: Throwable) {
-            backProgress = 0f
         }
     }
 
+    // 重置标志（页面重新进入时）
+    LaunchedEffect(Unit) {
+        isBackExecuted = false
+        backProgress = 0f
+    }
+
+    // 初始化播放器（仅动态壁纸）
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player?.release()
@@ -140,6 +149,7 @@ fun PreviewScreen(
         }
     }
 
+    // 生命周期监听（处理从系统确认页返回）
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -162,6 +172,7 @@ fun PreviewScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 加载取色规则和调整参数
     LaunchedEffect(wallpaper.id) {
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
@@ -174,13 +185,13 @@ fun PreviewScreen(
 
     LaunchedEffect(isExiting) {
         if (isExiting) {
-            delay(10)
+            kotlinx.coroutines.delay(10)
             onBack()
         }
     }
 
+    // 安全返回（主动点击返回按钮时调用）
     fun safeBack() {
-        // ★ 退出前保存调整参数（只保存一次）
         if (wallpaper.type == WallpaperType.STATIC && imageAdjustment.hasAnyAdjustment) {
             viewModel.saveAdjustmentForWallpaper(wallpaper, imageAdjustment)
         }
@@ -213,6 +224,7 @@ fun PreviewScreen(
         )
     }
 
+    // 页面主体：带返回动画的容器
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -259,6 +271,7 @@ fun PreviewScreen(
         }
     }
 
+    // 弹窗
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
