@@ -75,6 +75,8 @@ fun MonetNavGraph(
 
             LaunchedEffect(wallpaperId) {
                 isLoading = true
+                loadFailed = false
+
                 if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
                     wallpaper = cachedWallpaper
                 } else {
@@ -84,9 +86,11 @@ fun MonetNavGraph(
                         cachedWallpaper = loaded
                         cachedWallpaperId = wallpaperId
                     } else {
+                        wallpaper = null
                         loadFailed = true
                     }
                 }
+
                 isLoading = false
             }
 
@@ -98,6 +102,7 @@ fun MonetNavGraph(
                             .background(MaterialTheme.colorScheme.background)
                     )
                 }
+
                 loadFailed || wallpaper == null -> {
                     Box(
                         modifier = Modifier
@@ -105,12 +110,15 @@ fun MonetNavGraph(
                             .background(MaterialTheme.colorScheme.background)
                     )
                 }
+
                 else -> {
                     PreviewScreen(
                         wallpaper = wallpaper!!,
                         onBack = { navController.popBackStack() },
-                        onFullScreenClick = { adjustment: ImageAdjustment ->
+                        onFullScreenClick = { adjustment ->
                             cachedAdjustment = adjustment
+                            cachedWallpaper = wallpaper
+                            cachedWallpaperId = wallpaperId
                             navController.navigate(Routes.fullScreen(wallpaperId))
                         }
                     )
@@ -123,19 +131,58 @@ fun MonetNavGraph(
             arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
-            val wallpaper = cachedWallpaper
-            if (wallpaper != null && wallpaper.id == wallpaperId) {
-                FullScreenPreview(
-                    wallpaper = wallpaper,
-                    adjustment = cachedAdjustment,
-                    onDismiss = { navController.popBackStack() }
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                )
+            val viewModel: NavPreviewViewModel = hiltViewModel()
+
+            var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
+            var isLoading by remember { mutableStateOf(true) }
+            var loadFailed by remember { mutableStateOf(false) }
+
+            LaunchedEffect(wallpaperId) {
+                isLoading = true
+                loadFailed = false
+
+                val cached = cachedWallpaper
+                if (cached != null && cached.id == wallpaperId) {
+                    wallpaper = cached
+                } else {
+                    val loaded = viewModel.loadWallpaper(wallpaperId)
+                    if (loaded != null) {
+                        wallpaper = loaded
+                        cachedWallpaper = loaded
+                        cachedWallpaperId = wallpaperId
+                    } else {
+                        wallpaper = null
+                        loadFailed = true
+                    }
+                }
+
+                isLoading = false
+            }
+
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                }
+
+                loadFailed || wallpaper == null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                }
+
+                else -> {
+                    FullScreenPreview(
+                        wallpaper = wallpaper!!,
+                        adjustment = cachedAdjustment,
+                        onDismiss = { navController.popBackStack() }
+                    )
+                }
             }
         }
 

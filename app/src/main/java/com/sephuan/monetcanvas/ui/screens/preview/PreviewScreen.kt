@@ -1,15 +1,19 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package com.sephuan.monetcanvas.ui.screens.preview
 
-import android.app.Activity.RESULT_OK
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,7 +27,6 @@ import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,17 +62,11 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    // 防止重复启动系统确认页的标志
-    var launcherInvoked by remember { mutableStateOf(false) }
-
-    // ★ 精确监听系统确认页返回结果
     val liveWallpaperLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        launcherInvoked = false
-        // 仅在 WAITING_CONFIRM 状态时处理回调，避免残留回调影响
         if (applyState == ApplyState.WAITING_CONFIRM) {
-            if (result.resultCode == RESULT_OK) {
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
                 viewModel.onUserConfirmed(
                     context = context,
                     wallpaper = wallpaper,
@@ -102,34 +99,23 @@ fun PreviewScreen(
         }
     }
 
-    // 加载规则和调整参数，同时重置状态（切换壁纸时清除残留的 WAITING_CONFIRM 和 pending 配置）
+    // 加载规则和调整参数
     LaunchedEffect(wallpaper.id) {
-        // 重置启动标志
-        launcherInvoked = false
-        // 如果当前处于等待确认状态，强制重置并清除 pending 配置
-        if (applyState == ApplyState.WAITING_CONFIRM || applyState == ApplyState.CONFIRMING) {
-            viewModel.resetApplyState()
-            LiveWallpaperSetter.clearPendingConfig(context)
-        }
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
         viewModel.analyzeColors(wallpaper, rule)
+
         if (wallpaper.type == WallpaperType.STATIC) {
             imageAdjustment = viewModel.loadAdjustmentForWallpaper(wallpaper)
         }
     }
 
-    // ★ 监听 applyState 变化，仅在 WAITING_CONFIRM 且未被调用时启动系统确认页
-    LaunchedEffect(Unit) {
-        snapshotFlow { applyState }
-            .distinctUntilChanged()
-            .collect { state ->
-                if (state == ApplyState.WAITING_CONFIRM && !launcherInvoked) {
-                    launcherInvoked = true
-                    val intent = LiveWallpaperSetter.createActivationIntent(context)
-                    liveWallpaperLauncher.launch(intent)
-                }
-            }
+    // 启动动态壁纸系统确认页
+    LaunchedEffect(applyState) {
+        if (applyState == ApplyState.WAITING_CONFIRM) {
+            val intent = LiveWallpaperSetter.createActivationIntent(context)
+            liveWallpaperLauncher.launch(intent)
+        }
     }
 
     fun handleApply(target: Int) {
@@ -139,6 +125,7 @@ fun PreviewScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // 底层：壁纸预览
         PreviewMediaSection(
             wallpaper = wallpaper,
             player = player,
@@ -154,6 +141,7 @@ fun PreviewScreen(
             modifier = Modifier.fillMaxSize()
         )
 
+        // 顶层：底部面板
         PreviewBottomPanel(
             wallpaper = wallpaper,
             onBack = onBack,
@@ -180,17 +168,29 @@ fun PreviewScreen(
         )
     }
 
-    // 弹窗
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
             onDismiss = { showApplyDialog = false },
-            onApplyHome = { showApplyDialog = false; handleApply(1) },
-            onApplyLock = { showApplyDialog = false; handleApply(2) },
-            onApplyBoth = { showApplyDialog = false; handleApply(3) },
-            onApplyLive = { showApplyDialog = false; handleApply(0) }
+            onApplyHome = {
+                showApplyDialog = false
+                handleApply(1)
+            },
+            onApplyLock = {
+                showApplyDialog = false
+                handleApply(2)
+            },
+            onApplyBoth = {
+                showApplyDialog = false
+                handleApply(3)
+            },
+            onApplyLive = {
+                showApplyDialog = false
+                handleApply(0)
+            }
         )
     }
+
     if (showDeleteDialog) {
         DeleteWallpaperDialog(
             onDismiss = { showDeleteDialog = false },
@@ -200,6 +200,7 @@ fun PreviewScreen(
             }
         )
     }
+
     if (showRuleSheet && currentRule != null) {
         MonetRuleBottomSheet(
             rule = currentRule!!,
@@ -215,6 +216,7 @@ fun PreviewScreen(
             }
         )
     }
+
     if (liveWpResult == LiveWpResult.FAILED) {
         LiveWallpaperFailedDialog(
             onDismiss = { viewModel.clearLiveWpResult() },
@@ -227,11 +229,11 @@ fun PreviewScreen(
                 viewModel.resetApplyState()
                 if (wallpaper.type == WallpaperType.LIVE) {
                     viewModel.applyWallpaper(
-                        context,
-                        wallpaper,
-                        0,
-                        currentRule ?: MonetRule(),
-                        imageAdjustment
+                        context = context,
+                        wallpaper = wallpaper,
+                        target = 0,
+                        rule = currentRule ?: MonetRule(),
+                        adjustment = imageAdjustment
                     )
                 }
             }

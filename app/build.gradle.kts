@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.sephuan.monetcanvas"
-        minSdk = 33   // ★ 改为 33（Android 13），预测返回必需
+        minSdk = 33
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
@@ -54,9 +54,11 @@ dependencies {
     implementation(libs.compose.material.icons)
     debugImplementation(libs.compose.ui.tooling)
 
+    // 使用 libs 中已升级的版本
     implementation(libs.material3)
-    implementation(libs.activity.compose)
-    implementation(libs.navigation.compose)   // 确保 >= 2.8.7
+    implementation(libs.activity.compose)   // 1.13.0-alpha01
+    implementation(libs.navigation.compose) // 2.9.5
+
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
 

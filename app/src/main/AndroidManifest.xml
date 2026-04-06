@@ -2,18 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 静态壁纸 -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
-
-    <!-- 动态壁纸服务 -->
     <uses-permission
         android:name="android.permission.BIND_WALLPAPER"
         tools:ignore="ProtectedPermissions" />
-
-    <!-- Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- 某些 ROM 对动态服务更敏感 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <uses-feature
@@ -28,6 +21,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MonetCanvas"
+        android:enableOnBackInvokedCallback="true"
         tools:replace="android:allowBackup">
 
         <activity
