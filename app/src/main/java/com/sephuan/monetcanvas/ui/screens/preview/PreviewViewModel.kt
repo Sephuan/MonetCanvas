@@ -1,6 +1,8 @@
+// 文件路径：app/src/main/java/com/sephuan/monetcanvas/ui/screens/preview/PreviewViewModel.kt
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.ui.graphics.Color
@@ -9,39 +11,25 @@ import androidx.lifecycle.viewModelScope
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.datastore.SettingsDataStore
 import com.sephuan.monetcanvas.data.db.WallpaperEntity
-import com.sephuan.monetcanvas.data.model.ColorRegion
-import com.sephuan.monetcanvas.data.model.FillMode
-import com.sephuan.monetcanvas.data.model.FramePickPosition
-import com.sephuan.monetcanvas.data.model.ImageAdjustment
-import com.sephuan.monetcanvas.data.model.MonetRule
-import com.sephuan.monetcanvas.data.model.TonePreference
-import com.sephuan.monetcanvas.data.model.WallpaperType
+import com.sephuan.monetcanvas.data.model.*
 import com.sephuan.monetcanvas.data.repository.WallpaperRepository
 import com.sephuan.monetcanvas.util.ColorEngine
 import com.sephuan.monetcanvas.util.ExtractedColors
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
 import com.sephuan.monetcanvas.util.WallpaperSetter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 enum class ApplyState {
-    IDLE,
-    APPLYING,
-    WAITING_CONFIRM,
-    SUCCESS,
-    FAILED
+    IDLE, APPLYING, WAITING_CONFIRM, SUCCESS, FAILED
 }
 
 enum class LiveWpResult {
-    IDLE,
-    FAILED
+    IDLE, FAILED
 }
 
 @HiltViewModel
@@ -195,7 +183,6 @@ class PreviewViewModel @Inject constructor(
         target: Int,
         adjustment: ImageAdjustment
     ) {
-        // 保留短暂延迟以显示加载动画，但缩短到 100ms
         delay(100)
 
         val success = WallpaperSetter.setStaticWallpaper(
@@ -243,19 +230,9 @@ class PreviewViewModel @Inject constructor(
             return
         }
 
-        // 短暂延迟让 UI 反馈
-        delay(150)
-
-        val launched = LiveWallpaperSetter.tryActivate(context)
-
-        if (launched) {
-            _applyState.value = ApplyState.WAITING_CONFIRM
-            Log.d(TAG, "✓ 已跳转系统确认页")
-        } else {
-            LiveWallpaperSetter.clearPendingConfig(context)
-            _applyState.value = ApplyState.IDLE
-            _liveWpResult.value = LiveWpResult.FAILED
-        }
+        // 切换到等待确认状态，由 PreviewScreen 中的 Launcher 启动系统页
+        _applyState.value = ApplyState.WAITING_CONFIRM
+        Log.d(TAG, "等待用户确认动态壁纸")
     }
 
     fun onReturnFromSystemPage(
@@ -266,12 +243,13 @@ class PreviewViewModel @Inject constructor(
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
 
         viewModelScope.launch {
-            delay(500)  // 适中延迟，确保系统完成
+            delay(500) // 等待系统完全处理
 
             if (LiveWallpaperSetter.hasPendingConfig(context)) {
                 LiveWallpaperSetter.promotePendingToActive(context)
                 Log.d(TAG, "★ 配置已提升")
 
+                // 重新分析颜色并更新主题
                 analyzeColors(wallpaper, rule)
 
                 _applyState.value = ApplyState.SUCCESS
@@ -299,14 +277,10 @@ class PreviewViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.delete(wallpaper)
-                runCatching {
-                    val file = File(wallpaper.filePath)
-                    if (file.exists()) file.delete()
-                }
+                runCatching { File(wallpaper.filePath).delete() }
                 runCatching {
                     if (wallpaper.thumbnailPath != wallpaper.filePath) {
-                        val thumb = File(wallpaper.thumbnailPath)
-                        if (thumb.exists()) thumb.delete()
+                        File(wallpaper.thumbnailPath).delete()
                     }
                 }
                 Toast.makeText(

@@ -1,17 +1,14 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -38,7 +35,6 @@ fun PreviewScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 屏幕真实像素尺寸
     val displayMetrics = context.resources.displayMetrics
     val screenWidthPx = displayMetrics.widthPixels
     val screenHeightPx = displayMetrics.heightPixels
@@ -58,6 +54,16 @@ fun PreviewScreen(
     var currentRule by remember { mutableStateOf<MonetRule?>(null) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
+
+    // 动态壁纸返回监听
+    val liveWallpaperLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        // 从系统确认页返回，无论结果如何都尝试提升配置
+        if (isWaitingConfirm) {
+            viewModel.onReturnFromSystemPage(context, wallpaper, currentRule ?: MonetRule())
+        }
+    }
 
     // 初始化播放器（仅动态壁纸）
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
@@ -96,15 +102,22 @@ fun PreviewScreen(
         viewModel.applyWallpaper(context, wallpaper, target, rule, imageAdjustment)
     }
 
+    // 监听动态壁纸等待状态，自动跳转系统页
+    LaunchedEffect(applyState) {
+        if (applyState == ApplyState.WAITING_CONFIRM) {
+            liveWallpaperLauncher.launch(
+                LiveWallpaperSetter.createActivationIntent(context)
+            )
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // 底层：全屏壁纸预览
         PreviewMediaSection(
             wallpaper = wallpaper,
             player = player,
             adjustment = imageAdjustment,
             onAdjustmentChange = { newAdjustment ->
                 imageAdjustment = newAdjustment
-                // ★ 实时保存到数据库（无论是否设置壁纸）
                 if (wallpaper.type == WallpaperType.STATIC) {
                     viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
                 }
@@ -114,7 +127,6 @@ fun PreviewScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 顶层：悬浮面板
         PreviewBottomPanel(
             wallpaper = wallpaper,
             onBack = onBack,
@@ -141,7 +153,6 @@ fun PreviewScreen(
         )
     }
 
-    // 弹窗（保持不变）
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
@@ -186,7 +197,7 @@ fun PreviewScreen(
             onRetry = {
                 viewModel.clearLiveWpResult()
                 viewModel.resetApplyState()
-                LiveWallpaperSetter.tryActivate(context)
+                viewModel.applyWallpaper(context, wallpaper, 0, currentRule ?: MonetRule(), imageAdjustment)
             }
         )
     }

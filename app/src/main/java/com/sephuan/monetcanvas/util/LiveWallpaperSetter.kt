@@ -1,3 +1,4 @@
+// 文件路径：app/src/main/java/com/sephuan/monetcanvas/util/LiveWallpaperSetter.kt
 package com.sephuan.monetcanvas.util
 
 import android.app.Activity
@@ -26,9 +27,6 @@ object LiveWallpaperSetter {
         }
     }
 
-    /**
-     * 保存预览配置（异步写入，不阻塞主线程）
-     */
     fun savePendingConfig(
         context: Context,
         videoPath: String,
@@ -49,7 +47,6 @@ object LiveWallpaperSetter {
 
         val currentVersion = prefs.getLong(LiveWallpaperService.KEY_PENDING_VERSION, 0L)
 
-        // ★ 使用 apply() 替代 commit()，异步写入，不阻塞当前线程
         prefs.edit()
             .putString(LiveWallpaperService.KEY_PENDING_PATH, videoPath)
             .putString(LiveWallpaperService.KEY_PENDING_FRAME, framePosition)
@@ -81,7 +78,6 @@ object LiveWallpaperSetter {
         val currentVersion = prefs.getLong(LiveWallpaperService.KEY_CONFIG_VERSION, 0L)
         val newVersion = currentVersion + 1
 
-        // ★ 使用 apply() 异步写入
         prefs.edit()
             .putString(LiveWallpaperService.KEY_LIVE_PATH, pendingPath)
             .putString(LiveWallpaperService.KEY_FRAME_POSITION, pendingFrame)
@@ -115,6 +111,16 @@ object LiveWallpaperSetter {
         Log.d(TAG, "预览配置已清除")
     }
 
+    /**
+     * 创建用于启动系统动态壁纸选择页的 Intent
+     */
+    fun createActivationIntent(context: Context): Intent {
+        val component = ComponentName(context, LiveWallpaperService::class.java)
+        return Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+            putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
+        }
+    }
+
     fun tryActivate(context: Context): Boolean {
         val activity = context as? Activity
         if (activity == null) {
@@ -122,12 +128,8 @@ object LiveWallpaperSetter {
             return false
         }
 
-        val component = ComponentName(activity, LiveWallpaperService::class.java)
-        val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-            putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
-        }
         return try {
-            activity.startActivity(intent)
+            activity.startActivity(createActivationIntent(context))
             Log.d(TAG, "✓ ACTION_CHANGE_LIVE_WALLPAPER 启动成功")
             true
         } catch (e: Exception) {

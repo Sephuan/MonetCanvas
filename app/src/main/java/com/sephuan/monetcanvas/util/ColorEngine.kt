@@ -1,3 +1,4 @@
+// 文件路径：app/src/main/java/com/sephuan/monetcanvas/util/ColorEngine.kt
 package com.sephuan.monetcanvas.util
 
 import android.graphics.Bitmap
@@ -21,37 +22,27 @@ data class ExtractedColors(
 
 object ColorEngine {
 
-    /**
-     * 统一入口：支持静态图片和动态视频
-     */
     suspend fun extractColors(
         filePath: String,
         rule: MonetRule,
         type: WallpaperType = WallpaperType.STATIC
     ): ExtractedColors? = withContext(Dispatchers.IO) {
 
-        // 手动指定颜色时直接返回
         rule.manualOverrideColor?.let { return@withContext ExtractedColors(primary = it) }
 
-        // 获取原始 Bitmap
         val rawBitmap: Bitmap? = when (type) {
-            WallpaperType.STATIC -> BitmapFactory.decodeFile(filePath)
+            WallpaperType.STATIC -> decodeSampledBitmap(filePath)
             WallpaperType.LIVE -> extractVideoFrame(filePath, rule.framePosition)
         }
 
         rawBitmap ?: return@withContext null
 
-        // 按区域裁剪
-        val cropped = cropBitmap(rawBitmap, rule.colorRegion)
-
-        // Palette 分析
+        val cropped = safeCropBitmap(rawBitmap, rule.colorRegion)
         val palette = Palette.from(cropped).maximumColorCount(16).generate()
 
-        // 按偏好选主色
         val primarySwatch = pickSwatch(palette, rule.tonePreference)
         val primaryColor = primarySwatch?.rgb ?: Color.TRANSPARENT
 
-        // 次色和第三色
         val others = palette.swatches
             .sortedByDescending { it.population }
             .filter { it.rgb != primaryColor }
@@ -59,7 +50,6 @@ object ColorEngine {
         val secondaryColor = others.getOrNull(0)?.rgb
         val tertiaryColor = others.getOrNull(1)?.rgb
 
-        // 清理
         if (cropped !== rawBitmap) cropped.recycle()
         rawBitmap.recycle()
 
@@ -67,17 +57,29 @@ object ColorEngine {
         else ExtractedColors(primaryColor, secondaryColor, tertiaryColor)
     }
 
-    /**
-     * 兼容旧调用（静态图片，不传 type）
-     */
     suspend fun extractColors(
         imagePath: String,
         rule: MonetRule
     ): ExtractedColors? = extractColors(imagePath, rule, WallpaperType.STATIC)
 
-    /**
-     * 从视频中提取指定帧
-     */
+    private fun decodeSampledBitmap(filePath: String): Bitmap? {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(filePath, options)
+
+        val targetSize = 800 // 取色不需要太大图片
+        var sampleSize = 1
+        if (options.outHeight > targetSize || options.outWidth > targetSize) {
+            val heightRatio = options.outHeight.toDouble() / targetSize
+            val widthRatio = options.outWidth.toDouble() / targetSize
+            sampleSize = maxOf(1, minOf(heightRatio, widthRatio).toInt())
+        }
+
+        options.inSampleSize = sampleSize
+        options.inJustDecodeBounds = false
+        options.inPreferredConfig = Bitmap.Config.RGB_565
+        return BitmapFactory.decodeFile(filePath, options)
+    }
+
     fun extractVideoFrame(
         videoPath: String,
         position: FramePickPosition
@@ -85,7 +87,6 @@ object ColorEngine {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(videoPath)
-
             val durationMs = retriever.extractMetadata(
                 MediaMetadataRetriever.METADATA_KEY_DURATION
             )?.toLongOrNull() ?: 0L
@@ -108,21 +109,30 @@ object ColorEngine {
         }
     }
 
-    private fun cropBitmap(bitmap: Bitmap, region: ColorRegion): Bitmap {
-        return when (region) {
-            ColorRegion.FULL_FRAME -> bitmap
-            ColorRegion.CENTER -> {
-                val ox = (bitmap.width * 0.3f).toInt()
-                val oy = (bitmap.height * 0.3f).toInt()
-                Bitmap.createBitmap(bitmap, ox, oy, bitmap.width - 2 * ox, bitmap.height - 2 * oy)
+    private fun safeCropBitmap(bitmap: Bitmap, region: ColorRegion): Bitmap {
+        return try {
+            when (region) {
+                ColorRegion.FULL_FRAME -> bitmap
+                ColorRegion.CENTER -> {
+                    val ox = (bitmap.width * 0.3f).toInt().coerceAtLeast(1)
+                    val oy = (bitmap.height * 0.3f).toInt().coerceAtLeast(1)
+                    val w = (bitmap.width - 2 * ox).coerceAtLeast(1)
+                    val h = (bitmap.height - 2 * oy).coerceAtLeast(1)
+                    Bitmap.createBitmap(bitmap, ox, oy, w, h)
+                }
+                ColorRegion.TOP_HALF -> {
+                    val h = (bitmap.height / 2).coerceAtLeast(1)
+                    Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, h)
+                }
+                ColorRegion.BOTTOM_HALF -> {
+                    val h = (bitmap.height / 2).coerceAtLeast(1)
+                    Bitmap.createBitmap(bitmap, 0, bitmap.height - h, bitmap.width, h)
+                }
+                ColorRegion.CUSTOM -> bitmap
             }
-            ColorRegion.TOP_HALF -> {
-                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height / 2)
-            }
-            ColorRegion.BOTTOM_HALF -> {
-                Bitmap.createBitmap(bitmap, 0, bitmap.height / 2, bitmap.width, bitmap.height / 2)
-            }
-            ColorRegion.CUSTOM -> bitmap
+        } catch (e: Exception) {
+            e.printStackTrace()
+            bitmap
         }
     }
 
