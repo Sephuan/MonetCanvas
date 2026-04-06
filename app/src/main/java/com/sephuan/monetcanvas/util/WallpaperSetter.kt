@@ -19,7 +19,8 @@ import java.io.File
 object WallpaperSetter {
 
     private const val TAG = "WallpaperSetter"
-    private const val MAX_BITMAP_SIZE = 2048
+    // 降低最大图片尺寸，减少解码和变换耗时
+    private const val MAX_BITMAP_SIZE = 1440
 
     fun setStaticWallpaper(
         context: Context,
@@ -39,7 +40,6 @@ object WallpaperSetter {
             val screenW = screenSize.first
             val screenH = screenSize.second
 
-            // 解码采样（避免 OOM，但保持足够清晰度）
             val originalBitmap = decodeSampledBitmap(imagePath, screenW, screenH)
             if (originalBitmap == null) {
                 Log.e(TAG, "无法解码图片: $imagePath")
@@ -73,6 +73,9 @@ object WallpaperSetter {
         }
     }
 
+    /**
+     * 优化采样：根据目标屏幕尺寸和最大允许尺寸计算采样率，避免解码超大图
+     */
     private fun decodeSampledBitmap(imagePath: String, targetWidth: Int, targetHeight: Int): Bitmap? {
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
@@ -83,15 +86,12 @@ object WallpaperSetter {
         val originalHeight = options.outHeight
         if (originalWidth <= 0 || originalHeight <= 0) return null
 
-        val targetDiagonal = Math.hypot(targetWidth.toDouble(), targetHeight.toDouble())
-        val originalDiagonal = Math.hypot(originalWidth.toDouble(), originalHeight.toDouble())
-        var sampleSize = 1
-        if (originalDiagonal > targetDiagonal * 1.5) {
-            sampleSize = (originalDiagonal / targetDiagonal).toInt().coerceIn(1, 4)
-        }
+        // 计算合适的采样率：使得解码后的图片尺寸接近目标尺寸或 MAX_BITMAP_SIZE 的较小者
         val maxDimension = maxOf(originalWidth, originalHeight)
-        if (maxDimension > MAX_BITMAP_SIZE) {
-            sampleSize = maxOf(sampleSize, maxDimension / MAX_BITMAP_SIZE)
+        val targetMaxDimension = minOf(maxOf(targetWidth, targetHeight), MAX_BITMAP_SIZE)
+        var sampleSize = 1
+        if (maxDimension > targetMaxDimension) {
+            sampleSize = (maxDimension.toFloat() / targetMaxDimension).toInt().coerceAtLeast(1)
         }
 
         options.inSampleSize = sampleSize
@@ -100,17 +100,12 @@ object WallpaperSetter {
         return BitmapFactory.decodeFile(imagePath, options)
     }
 
-    /**
-     * 应用所有调整，生成最终 Bitmap
-     * 逻辑与 PreviewMediaSection 完全一致
-     */
     private fun applyAdjustments(
         original: Bitmap,
         adjustment: ImageAdjustment,
         targetWidth: Int,
         targetHeight: Int
     ): Bitmap {
-        // 1. 先翻转原图（与预览的 graphicsLayer 镜像顺序一致）
         val flipped = applyMirror(original, adjustment.mirrorHorizontal, adjustment.mirrorVertical)
 
         val srcW = flipped.width.toFloat()
@@ -118,7 +113,6 @@ object WallpaperSetter {
         val dstW = targetWidth.toFloat()
         val dstH = targetHeight.toFloat()
 
-        // 2. 创建画布并填充背景色
         val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
         val bgArgb = android.graphics.Color.argb(
@@ -129,7 +123,6 @@ object WallpaperSetter {
         )
         canvas.drawColor(bgArgb)
 
-        // 3. 计算缩放（与预览完全一致）
         val baseScale = when (adjustment.fillMode) {
             FillMode.COVER -> maxOf(dstW / srcW, dstH / srcH)
             FillMode.FIT, FillMode.FREE -> minOf(dstW / srcW, dstH / srcH)
@@ -144,7 +137,6 @@ object WallpaperSetter {
         val scaledW = srcW * finalScale
         val scaledH = srcH * finalScale
 
-        // 4. 计算偏移（与预览的 graphicsLayer translation 一致）
         val centerX = (dstW - scaledW) / 2f
         val centerY = (dstH - scaledH) / 2f
 
@@ -160,16 +152,13 @@ object WallpaperSetter {
             FillMode.FREE -> centerY + adjustment.offsetY
         }
 
-        // 5. 构建变换矩阵（先缩放，后平移）
         val matrix = Matrix()
         matrix.setScale(finalScale, finalScale)
         matrix.postTranslate(offsetX, offsetY)
 
-        // 6. 色彩滤镜（与预览的 ColorFilter 完全一致）
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         buildColorFilter(adjustment)?.let { paint.colorFilter = it }
 
-        // 7. 绘制
         canvas.drawBitmap(flipped, matrix, paint)
 
         if (flipped !== original) flipped.recycle()

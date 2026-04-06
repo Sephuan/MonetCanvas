@@ -109,7 +109,7 @@ fun MonetNavGraph(
                     PreviewScreen(
                         wallpaper = wallpaper!!,
                         onBack = { navController.popBackStack() },
-                        onFullScreenClick = { adjustment ->
+                        onFullScreenClick = { adjustment: ImageAdjustment ->
                             cachedAdjustment = adjustment
                             navController.navigate(Routes.fullScreen(wallpaperId))
                         }

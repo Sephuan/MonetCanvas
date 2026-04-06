@@ -1,7 +1,8 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
 
 package com.sephuan.monetcanvas.ui.screens.preview
 
+import android.app.Activity.RESULT_OK
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +49,8 @@ fun PreviewScreen(
     val extractedColors by viewModel.extractedColors.collectAsStateWithLifecycle()
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
     val liveWpResult by viewModel.liveWpResult.collectAsStateWithLifecycle()
+    val showBanner by viewModel.showBanner.collectAsStateWithLifecycle()
+    val bannerSuccess by viewModel.bannerSuccess.collectAsStateWithLifecycle()
 
     val isApplying = applyState == ApplyState.APPLYING
     val isWaitingConfirm = applyState == ApplyState.WAITING_CONFIRM
@@ -55,13 +59,25 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    // 动态壁纸返回监听
+    // 防止重复启动系统确认页的标志
+    var launcherInvoked by remember { mutableStateOf(false) }
+
+    // ★ 精确监听系统确认页返回结果
     val liveWallpaperLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
-    ) {
-        // 从系统确认页返回，无论结果如何都尝试提升配置
-        if (isWaitingConfirm) {
-            viewModel.onReturnFromSystemPage(context, wallpaper, currentRule ?: MonetRule())
+    ) { result ->
+        launcherInvoked = false
+        // 仅在 WAITING_CONFIRM 状态时处理回调，避免残留回调影响
+        if (applyState == ApplyState.WAITING_CONFIRM) {
+            if (result.resultCode == RESULT_OK) {
+                viewModel.onUserConfirmed(
+                    context = context,
+                    wallpaper = wallpaper,
+                    rule = currentRule ?: MonetRule()
+                )
+            } else {
+                viewModel.onUserCancelled(context)
+            }
         }
     }
 
@@ -86,8 +102,15 @@ fun PreviewScreen(
         }
     }
 
-    // 加载规则和调整参数
+    // 加载规则和调整参数，同时重置状态（切换壁纸时清除残留的 WAITING_CONFIRM 和 pending 配置）
     LaunchedEffect(wallpaper.id) {
+        // 重置启动标志
+        launcherInvoked = false
+        // 如果当前处于等待确认状态，强制重置并清除 pending 配置
+        if (applyState == ApplyState.WAITING_CONFIRM || applyState == ApplyState.CONFIRMING) {
+            viewModel.resetApplyState()
+            LiveWallpaperSetter.clearPendingConfig(context)
+        }
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
         viewModel.analyzeColors(wallpaper, rule)
@@ -96,19 +119,23 @@ fun PreviewScreen(
         }
     }
 
+    // ★ 监听 applyState 变化，仅在 WAITING_CONFIRM 且未被调用时启动系统确认页
+    LaunchedEffect(Unit) {
+        snapshotFlow { applyState }
+            .distinctUntilChanged()
+            .collect { state ->
+                if (state == ApplyState.WAITING_CONFIRM && !launcherInvoked) {
+                    launcherInvoked = true
+                    val intent = LiveWallpaperSetter.createActivationIntent(context)
+                    liveWallpaperLauncher.launch(intent)
+                }
+            }
+    }
+
     fun handleApply(target: Int) {
         if (isApplying || isWaitingConfirm) return
         val rule = currentRule ?: MonetRule()
         viewModel.applyWallpaper(context, wallpaper, target, rule, imageAdjustment)
-    }
-
-    // 监听动态壁纸等待状态，自动跳转系统页
-    LaunchedEffect(applyState) {
-        if (applyState == ApplyState.WAITING_CONFIRM) {
-            liveWallpaperLauncher.launch(
-                LiveWallpaperSetter.createActivationIntent(context)
-            )
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -140,8 +167,8 @@ fun PreviewScreen(
             extractedColors = extractedColors,
             isAnalyzing = isAnalyzing,
             onConfigClick = { showRuleSheet = true },
-            showReturnBanner = false,
-            bannerSuccess = false,
+            showReturnBanner = showBanner,
+            bannerSuccess = bannerSuccess,
             adjustment = imageAdjustment,
             onAdjustmentChange = { newAdjustment ->
                 imageAdjustment = newAdjustment
@@ -153,6 +180,7 @@ fun PreviewScreen(
         )
     }
 
+    // 弹窗
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,
@@ -197,7 +225,15 @@ fun PreviewScreen(
             onRetry = {
                 viewModel.clearLiveWpResult()
                 viewModel.resetApplyState()
-                viewModel.applyWallpaper(context, wallpaper, 0, currentRule ?: MonetRule(), imageAdjustment)
+                if (wallpaper.type == WallpaperType.LIVE) {
+                    viewModel.applyWallpaper(
+                        context,
+                        wallpaper,
+                        0,
+                        currentRule ?: MonetRule(),
+                        imageAdjustment
+                    )
+                }
             }
         )
     }

@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.palette.graphics.Palette
 import java.io.File
 import kotlin.random.Random
+import java.util.concurrent.atomic.AtomicBoolean
 
 class LiveWallpaperService : WallpaperService() {
 
@@ -53,7 +54,13 @@ class LiveWallpaperService : WallpaperService() {
         private val maxRetries = 3
         private val mainHandler = Handler(Looper.getMainLooper())
 
+        // 当前有效的颜色（提取成功时更新，失败时保留旧值）
         private var computedColors: WallpaperColors? = null
+
+        // 颜色提取的简单防重复标志
+        private val isExtracting = AtomicBoolean(false)
+        private val extractHandler = Handler(Looper.getMainLooper())
+        private var pendingExtractPath: String? = null
 
         private val prefs: SharedPreferences by lazy {
             applicationContext.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -75,7 +82,16 @@ class LiveWallpaperService : WallpaperService() {
             val path = resolveCurrentPath()
             if (!path.isNullOrBlank() && File(path).exists()) {
                 currentVideoPath = path
-                Thread { extractAndReportColors(path) }.start()
+                scheduleColorExtract(path)
+                if (surfaceHolder.surface.isValid) {
+                    currentHolder = surfaceHolder
+                    loadAndPlay()
+                }
+            } else {
+                Log.w(TAG, "onCreate: 当前无有效路径, path=$path")
+                if (computedColors == null) {
+                    setDefaultColors()
+                }
             }
         }
 
@@ -90,35 +106,44 @@ class LiveWallpaperService : WallpaperService() {
             currentHolder = holder
         }
 
-        // ★ 关键修复：每次可见时强制检查配置，确保切换生效
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
             if (!visible) {
-                try { exoPlayer?.pause() } catch (_: Exception) {}
+                try {
+                    exoPlayer?.pause()
+                } catch (_: Exception) {
+                }
                 return
             }
 
-            // 强制重新解析当前配置（每次都重新读，不依赖版本号变化）
             val latestPath = resolveCurrentPath()
-            Log.d(TAG, "onVisibilityChanged: visible=true, latestPath=$latestPath, currentPath=$currentVideoPath")
+            Log.d(TAG, "onVisibilityChanged: visible=true, isPreview=$isPreviewEngine, latestPath=$latestPath, currentPath=$currentVideoPath")
 
             if (!latestPath.isNullOrBlank() && File(latestPath).exists()) {
-                // 无论是否相同，只要桌面引擎且路径有效，都重新加载（确保切换生效）
-                // 但对于预览引擎，如果路径相同则不重复加载
-                if (!isPreviewEngine || latestPath != currentVideoPath) {
-                    Log.d(TAG, "重新加载视频和颜色: $latestPath")
+                if (exoPlayer == null || latestPath != currentVideoPath) {
+                    Log.d(TAG, "onVisibilityChanged: 需要重新加载 (path=$latestPath)")
                     currentVideoPath = latestPath
                     retryCount = 0
-                    mainHandler.post { loadAndPlay() }
-                    Thread { extractAndReportColors(latestPath) }.start()
+                    loadAndPlay()
+                    scheduleColorExtract(latestPath)
+                } else if (!isPlayerReady) {
+                    loadAndPlay()
                 }
+            } else if (latestPath.isNullOrBlank()) {
+                Log.w(TAG, "当前引擎没有可用路径")
+                releasePlayer()
+            } else if (!File(latestPath).exists()) {
+                Log.e(TAG, "视频文件不存在: $latestPath")
+                releasePlayer()
             }
 
             if (isPlayerReady) {
-                try { exoPlayer?.play() } catch (e: Exception) {
+                try {
+                    exoPlayer?.play()
+                } catch (_: Exception) {
                     if (currentHolder != null) loadAndPlay()
                 }
-            } else if (currentHolder != null) {
+            } else if (currentHolder != null && !resolveCurrentPath().isNullOrBlank()) {
                 loadAndPlay()
             }
         }
@@ -132,6 +157,7 @@ class LiveWallpaperService : WallpaperService() {
         override fun onDestroy() {
             prefs.unregisterOnSharedPreferenceChangeListener(this)
             mainHandler.removeCallbacksAndMessages(null)
+            extractHandler.removeCallbacksAndMessages(null)
             releasePlayer()
             currentHolder = null
             super.onDestroy()
@@ -143,102 +169,112 @@ class LiveWallpaperService : WallpaperService() {
 
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
             if (key == versionKey) {
-                val path = resolveCurrentPath()
-                if (!path.isNullOrBlank() && File(path).exists()) {
-                    Log.d(TAG, "配置变化 (isPreview=$isPreviewEngine), path=$path")
-                    currentVideoPath = path
-                    Thread { extractAndReportColors(path) }.start()
+                val newPath = resolveCurrentPath()
+                if (!newPath.isNullOrBlank() && File(newPath).exists()) {
+                    Log.d(TAG, "配置变化: 新路径=$newPath, 旧路径=$currentVideoPath")
+                    currentVideoPath = newPath
+                    releasePlayer()
+                    retryCount = 0
                     if (currentHolder != null) {
-                        retryCount = 0
-                        mainHandler.post { loadAndPlay() }
+                        loadAndPlay()
+                    } else {
+                        Log.d(TAG, "holder 未就绪，将在 surface 创建时加载")
                     }
+                    scheduleColorExtract(newPath)
+                } else {
+                    Log.w(TAG, "配置变化但新路径无效: $newPath")
                 }
             }
         }
 
         private fun resolveCurrentPath(): String? {
-            val primary = prefs.getString(pathKey, null)
-            if (!primary.isNullOrBlank()) return primary
-            // fallback
             return if (isPreviewEngine) {
-                prefs.getString(KEY_LIVE_PATH, null)
+                prefs.getString(KEY_PENDING_PATH, null) ?: prefs.getString(KEY_LIVE_PATH, null)
             } else {
-                prefs.getString(KEY_PENDING_PATH, null)
+                prefs.getString(KEY_LIVE_PATH, null)
             }
         }
 
         private fun resolveFrameKey(): String {
-            val primary = prefs.getString(frameKey, null)
-            if (!primary.isNullOrBlank()) return primary
             return if (isPreviewEngine) {
-                prefs.getString(KEY_FRAME_POSITION, "FIRST") ?: "FIRST"
+                prefs.getString(KEY_PENDING_FRAME, null) ?: prefs.getString(KEY_FRAME_POSITION, "FIRST") ?: "FIRST"
             } else {
-                prefs.getString(KEY_PENDING_FRAME, "FIRST") ?: "FIRST"
+                prefs.getString(KEY_FRAME_POSITION, "FIRST") ?: "FIRST"
             }
         }
 
         private fun resolveRegionKey(): String {
-            val primary = prefs.getString(regionKey, null)
-            if (!primary.isNullOrBlank()) return primary
             return if (isPreviewEngine) {
-                prefs.getString(KEY_COLOR_REGION, "FULL_FRAME") ?: "FULL_FRAME"
+                prefs.getString(KEY_PENDING_REGION, null) ?: prefs.getString(KEY_COLOR_REGION, "FULL_FRAME") ?: "FULL_FRAME"
             } else {
-                prefs.getString(KEY_PENDING_REGION, "FULL_FRAME") ?: "FULL_FRAME"
+                prefs.getString(KEY_COLOR_REGION, "FULL_FRAME") ?: "FULL_FRAME"
             }
         }
 
         private fun resolveToneKey(): String {
-            val primary = prefs.getString(toneKey, null)
-            if (!primary.isNullOrBlank()) return primary
             return if (isPreviewEngine) {
-                prefs.getString(KEY_TONE_PREFERENCE, "AUTO") ?: "AUTO"
+                prefs.getString(KEY_PENDING_TONE, null) ?: prefs.getString(KEY_TONE_PREFERENCE, "AUTO") ?: "AUTO"
             } else {
-                prefs.getString(KEY_PENDING_TONE, "AUTO") ?: "AUTO"
+                prefs.getString(KEY_TONE_PREFERENCE, "AUTO") ?: "AUTO"
             }
         }
 
-        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-        private fun loadAndPlay() {
-            val holder = currentHolder ?: return
-            val path = resolveCurrentPath()
-            if (path.isNullOrBlank() || !File(path).exists()) return
+        /**
+         * 调度颜色提取：延迟 300ms 后执行，避免短时间内多次请求。
+         * 如果已有正在进行的提取任务，则只记录最新路径，等当前任务完成后立即启动新任务。
+         */
+        private fun scheduleColorExtract(videoPath: String) {
+            synchronized(this) {
+                pendingExtractPath = videoPath
+            }
+            // 如果已经在提取中，则等待当前任务完成后会检查 pendingExtractPath 并再次调度
+            if (isExtracting.get()) {
+                Log.d(TAG, "颜色提取已在执行中，记录最新路径: $videoPath")
+                return
+            }
 
-            releasePlayer()
-            currentVideoPath = path
-
-            try {
-                exoPlayer = ExoPlayer.Builder(applicationContext).build().apply {
-                    setVideoSurface(holder.surface)
-                    setMediaItem(MediaItem.fromUri(android.net.Uri.parse("file://$path")))
-                    repeatMode = Player.REPEAT_MODE_ALL
-                    volume = 0f
-
-                    addListener(object : Player.Listener {
-                        override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_READY) {
-                                isPlayerReady = true
-                                retryCount = 0
-                                if (isVisible) play()
-                            }
-                        }
-
-                        override fun onPlayerError(error: PlaybackException) {
-                            isPlayerReady = false
-                            if (retryCount < maxRetries) {
-                                retryCount++
-                                mainHandler.postDelayed({ loadAndPlay() }, 1000)
-                            }
-                        }
-                    })
-                    prepare()
+            extractHandler.postDelayed({
+                // 取出最新的待提取路径
+                val pathToExtract = synchronized(this) {
+                    val path = pendingExtractPath
+                    pendingExtractPath = null
+                    path
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "loadAndPlay failed", e)
-                releasePlayer()
-            }
+                if (pathToExtract.isNullOrBlank() || !File(pathToExtract).exists()) {
+                    Log.e(TAG, "颜色提取路径无效: $pathToExtract")
+                    isExtracting.set(false)
+                    return@postDelayed
+                }
+
+                isExtracting.set(true)
+                Thread {
+                    val success = extractColorsOnce(pathToExtract)
+                    isExtracting.set(false)
+
+                    // 提取完成后，检查是否有新的待提取路径（可能在提取期间又收到了配置变化）
+                    val nextPath = synchronized(this) { pendingExtractPath }
+                    if (!nextPath.isNullOrBlank() && nextPath != pathToExtract) {
+                        Log.d(TAG, "提取完成后发现新的待提取路径: $nextPath，继续调度")
+                        scheduleColorExtract(nextPath)
+                    } else {
+                        // 没有新路径，但若提取失败且当前 computedColors 仍为 null，则设置默认颜色
+                        if (!success && computedColors == null) {
+                            mainHandler.post {
+                                setDefaultColors()
+                                notifyColorsChanged()
+                            }
+                        }
+                    }
+                }.start()
+            }, 300)
         }
 
-        private fun extractAndReportColors(videoPath: String) {
+        /**
+         * 单次提取，返回是否成功。
+         * 成功时更新 computedColors 并通知系统。
+         * 失败时不做任何改变（保留原有颜色）。
+         */
+        private fun extractColorsOnce(videoPath: String): Boolean {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(videoPath)
@@ -259,7 +295,10 @@ class LiveWallpaperService : WallpaperService() {
                 val frame: Bitmap = retriever.getFrameAtTime(
                     targetTimeUs,
                     MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                ) ?: return
+                ) ?: run {
+                    Log.e(TAG, "提取帧失败: $videoPath")
+                    return false
+                }
 
                 val region = resolveRegionKey()
                 val cropped = cropBitmap(frame, region)
@@ -280,25 +319,40 @@ class LiveWallpaperService : WallpaperService() {
                     .sortedByDescending { it.population }
                     .filter { it.rgb != primaryColor }
 
-                computedColors = WallpaperColors(
+                val newColors = WallpaperColors(
                     Color.valueOf(primaryColor),
                     allSwatches.getOrNull(0)?.rgb?.let { Color.valueOf(it) },
                     allSwatches.getOrNull(1)?.rgb?.let { Color.valueOf(it) }
                 )
 
-                Log.d(TAG, "★ 颜色提取完成：#${Integer.toHexString(primaryColor)} (isPreview=$isPreviewEngine)")
-
-                mainHandler.post {
-                    try { notifyColorsChanged() } catch (_: Exception) {}
-                }
+                computedColors = newColors
+                Log.d(TAG, "★ 颜色提取成功：#${Integer.toHexString(primaryColor)} (isPreview=$isPreviewEngine)")
 
                 if (cropped !== frame) cropped.recycle()
                 frame.recycle()
+
+                mainHandler.post {
+                    try {
+                        notifyColorsChanged()
+                    } catch (_: Exception) {
+                    }
+                }
+                return true
             } catch (e: Exception) {
-                Log.e(TAG, "颜色提取失败", e)
+                Log.e(TAG, "颜色提取异常", e)
+                return false
             } finally {
                 runCatching { retriever.release() }
             }
+        }
+
+        private fun setDefaultColors() {
+            computedColors = WallpaperColors(
+                Color.valueOf(Color.BLUE),
+                Color.valueOf(Color.GRAY),
+                Color.valueOf(Color.LTGRAY)
+            )
+            Log.d(TAG, "使用默认颜色")
         }
 
         private fun cropBitmap(bitmap: Bitmap, region: String): Bitmap {
@@ -307,17 +361,14 @@ class LiveWallpaperService : WallpaperService() {
                     "CENTER" -> {
                         val ox = (bitmap.width * 0.3f).toInt().coerceAtLeast(1)
                         val oy = (bitmap.height * 0.3f).toInt().coerceAtLeast(1)
-                        Bitmap.createBitmap(
-                            bitmap, ox, oy,
-                            (bitmap.width - 2 * ox).coerceAtLeast(1),
-                            (bitmap.height - 2 * oy).coerceAtLeast(1)
-                        )
+                        val w = (bitmap.width - 2 * ox).coerceAtLeast(1)
+                        val h = (bitmap.height - 2 * oy).coerceAtLeast(1)
+                        Bitmap.createBitmap(bitmap, ox, oy, w, h)
                     }
-                    "TOP_HALF" -> Bitmap.createBitmap(
-                        bitmap, 0, 0,
-                        bitmap.width,
-                        (bitmap.height / 2).coerceAtLeast(1)
-                    )
+                    "TOP_HALF" -> {
+                        val h = (bitmap.height / 2).coerceAtLeast(1)
+                        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, h)
+                    }
                     "BOTTOM_HALF" -> {
                         val h = (bitmap.height / 2).coerceAtLeast(1)
                         Bitmap.createBitmap(bitmap, 0, bitmap.height - h, bitmap.width, h)
@@ -326,6 +377,77 @@ class LiveWallpaperService : WallpaperService() {
                 }
             } catch (_: Exception) {
                 bitmap
+            }
+        }
+
+        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+        private fun loadAndPlay() {
+            val holder = currentHolder ?: run {
+                Log.d(TAG, "loadAndPlay: holder is null")
+                return
+            }
+            val path = resolveCurrentPath()
+
+            if (path.isNullOrBlank()) {
+                Log.d(TAG, "loadAndPlay: path is null/blank, skip")
+                return
+            }
+
+            val file = File(path)
+            if (!file.exists()) {
+                Log.e(TAG, "loadAndPlay: file not exists, path=$path")
+                return
+            }
+
+            if (exoPlayer != null && currentVideoPath == path && isPlayerReady) {
+                Log.d(TAG, "loadAndPlay: 已加载相同视频且状态正常，无需重建")
+                return
+            }
+
+            Log.d(TAG, "loadAndPlay: 创建新播放器 (path=$path)")
+            releasePlayer()
+            currentVideoPath = path
+
+            try {
+                exoPlayer = ExoPlayer.Builder(applicationContext).build().apply {
+                    setVideoSurface(holder.surface)
+                    setMediaItem(MediaItem.fromUri(android.net.Uri.parse("file://$path")))
+                    repeatMode = Player.REPEAT_MODE_ALL
+                    volume = 0f
+
+                    addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            when (playbackState) {
+                                Player.STATE_READY -> {
+                                    isPlayerReady = true
+                                    retryCount = 0
+                                    if (isVisible) play()
+                                    Log.d(TAG, "播放器就绪，开始播放")
+                                }
+                                Player.STATE_ENDED -> {
+                                    seekTo(0)
+                                    play()
+                                }
+                                Player.STATE_BUFFERING -> {
+                                    Log.d(TAG, "播放器缓冲中")
+                                }
+                            }
+                        }
+
+                        override fun onPlayerError(error: PlaybackException) {
+                            Log.e(TAG, "播放器错误: ${error.errorCodeName}", error)
+                            isPlayerReady = false
+                            if (retryCount < maxRetries) {
+                                retryCount++
+                                mainHandler.postDelayed({ loadAndPlay() }, 1000)
+                            }
+                        }
+                    })
+                    prepare()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "loadAndPlay failed", e)
+                releasePlayer()
             }
         }
 

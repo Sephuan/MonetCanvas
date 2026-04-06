@@ -1,4 +1,3 @@
-// 文件路径：app/src/main/java/com/sephuan/monetcanvas/util/LiveWallpaperSetter.kt
 package com.sephuan.monetcanvas.util
 
 import android.app.Activity
@@ -15,6 +14,11 @@ import java.io.File
 object LiveWallpaperSetter {
 
     private const val TAG = "LiveWallpaperSetter"
+
+    // 常量定义，与 LiveWallpaperService 保持一致
+    const val PREFS_NAME = "wallpaper_prefs"
+    const val KEY_LIVE_PATH = "live_wallpaper_path"
+    const val KEY_PENDING_PATH = "pending_live_path"
 
     fun isOurLiveWallpaperActive(context: Context): Boolean {
         return try {
@@ -40,10 +44,7 @@ object LiveWallpaperSetter {
             return false
         }
 
-        val prefs = context.getSharedPreferences(
-            LiveWallpaperService.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         val currentVersion = prefs.getLong(LiveWallpaperService.KEY_PENDING_VERSION, 0L)
 
@@ -60,10 +61,7 @@ object LiveWallpaperSetter {
     }
 
     fun promotePendingToActive(context: Context) {
-        val prefs = context.getSharedPreferences(
-            LiveWallpaperService.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         val pendingPath = prefs.getString(LiveWallpaperService.KEY_PENDING_PATH, null)
         val pendingFrame = prefs.getString(LiveWallpaperService.KEY_PENDING_FRAME, "FIRST")
@@ -90,18 +88,12 @@ object LiveWallpaperSetter {
     }
 
     fun hasPendingConfig(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(
-            LiveWallpaperService.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return !prefs.getString(LiveWallpaperService.KEY_PENDING_PATH, null).isNullOrBlank()
     }
 
     fun clearPendingConfig(context: Context) {
-        val prefs = context.getSharedPreferences(
-            LiveWallpaperService.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .remove(LiveWallpaperService.KEY_PENDING_PATH)
             .remove(LiveWallpaperService.KEY_PENDING_FRAME)
@@ -111,9 +103,6 @@ object LiveWallpaperSetter {
         Log.d(TAG, "预览配置已清除")
     }
 
-    /**
-     * 创建用于启动系统动态壁纸选择页的 Intent
-     */
     fun createActivationIntent(context: Context): Intent {
         val component = ComponentName(context, LiveWallpaperService::class.java)
         return Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
