@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Common -->
+    <string name="app_name">MonetCanvas</string>
     <string name="back">Back</string>
     <string name="settings">Settings</string>
     <string name="cancel">Cancel</string>
@@ -16,7 +17,6 @@
     <string name="filter_all">All</string>
     <string name="filter_static">Static</string>
     <string name="filter_live">Live</string>
-    <string name="filter_favorites">Favorites</string>
     <string name="empty_hint">No wallpapers. Tap + to import</string>
     <string name="import_wallpaper">Import</string>
     <string name="live_label">Live</string>
@@ -113,8 +113,8 @@
     <string name="backing_up">Backing up…</string>
     <string name="switch_backup_dir">Switch Backup Directory</string>
     <string name="migrate_dialog_text">Existing backup directory detected. Migrate files to the new directory?</string>
-    <string name="migrate_option">\"Migrate\": Files will be copied to the new directory, then deleted from the old one</string>
-    <string name="no_migrate_option">\"Don\'t Migrate\": Only switch directory, keep old files</string>
+    <string name="migrate_option">"Migrate": Files will be copied to the new directory, then deleted from the old one</string>
+    <string name="no_migrate_option">"Don\'t Migrate": Only switch directory, keep old files</string>
     <string name="migrate_note">Either way, wallpapers in the app are not affected (stored in private directory)</string>
     <string name="migrate_files">Migrate</string>
     <string name="no_migrate">Don\'t Migrate</string>
@@ -146,7 +146,7 @@
     <string name="welcome_feature_1">Import static/live wallpapers, set with one tap</string>
     <string name="welcome_feature_2">Auto-extract colors from live wallpapers to drive system Monet theme</string>
     <string name="welcome_feature_3">Wallpapers safely stored in app directory, unaffected by external deletion</string>
-    <string name="welcome_note">Tip: When setting a live wallpaper, the system will show a confirmation page. Tap \"Set wallpaper\" to complete.</string>
+    <string name="welcome_note">Tip: When setting a live wallpaper, the system will show a confirmation page. Tap "Set wallpaper" to complete.</string>
     <string name="welcome_start">Get Started</string>
 
     <!-- Notification Permission -->
@@ -157,7 +157,7 @@
 
     <!-- Live Wallpaper Setup -->
     <string name="live_wp_setup_title">Activate Live Wallpaper Service</string>
-    <string name="live_wp_setup_desc">MonetCanvas provides a live wallpaper service that can set videos as live wallpapers and auto-extract colors for the system Monet theme.\n\nTap \"Activate\" and the system will show a confirmation page. Tap \"Set wallpaper\" to complete activation.\n\nYou can activate now even without imported wallpapers. You can set them later anytime.</string>
+    <string name="live_wp_setup_desc">MonetCanvas provides a live wallpaper service that can set videos as live wallpapers and auto-extract colors for the system Monet theme.\n\nTap "Activate" and the system will show a confirmation page. Tap "Set wallpaper" to complete activation.\n\nYou can activate now even without imported wallpapers. You can set them later anytime.</string>
     <string name="live_wp_setup_hint">You can also activate later when setting a live wallpaper. This won\'t affect usage.</string>
     <string name="live_wp_setup_enable">Activate</string>
     <string name="live_wp_setup_later">Later</string>
@@ -165,13 +165,39 @@
 
     <!-- Live wallpaper hints -->
     <string name="live_wp_file_invalid">Video file is invalid or missing</string>
-    <string name="live_wp_chooser_hint">Please find and select \"MonetCanvas\" in the list</string>
-    <string name="live_wp_manual_hint">Please go to Wallpaper settings and select \"MonetCanvas\" live wallpaper</string>
-    <string name="live_wp_all_failed">Cannot open wallpaper settings. Please go to System Settings → Wallpaper → select \"MonetCanvas\" manually</string>
+    <string name="live_wp_chooser_hint">Please find and select "MonetCanvas" in the list</string>
+    <string name="live_wp_manual_hint">Please go to Wallpaper settings and select "MonetCanvas" live wallpaper</string>
+    <string name="live_wp_all_failed">Cannot open wallpaper settings. Please go to System Settings → Wallpaper → select "MonetCanvas" manually</string>
 
-    <!-- ★ Live wallpaper permission dialog -->
+    <!-- Live wallpaper permission dialog -->
     <string name="live_wp_perm_title">Cannot Set Live Wallpaper</string>
-    <string name="live_wp_perm_desc">The live wallpaper service needs to be activated first.\n\nPossible reasons:\n• Live wallpaper service not yet activated\n• System restricted background service permissions\n• Battery optimization is blocking the service\n\nPlease go to system settings and check:\n1. All permissions for MonetCanvas are granted\n2. Battery optimization is set to \"Unrestricted\"\n3. Background activity is allowed</string>
+    <string name="live_wp_perm_desc">The live wallpaper service needs to be activated first.\n\nPossible reasons:\n• Live wallpaper service not yet activated\n• System restricted background service permissions\n• Battery optimization is blocking the service\n\nPlease go to system settings and check:\n1. All permissions for MonetCanvas are granted\n2. Battery optimization is set to "Unrestricted"\n3. Background activity is allowed</string>
     <string name="live_wp_perm_go_settings">Go to App Settings</string>
     <string name="live_wp_perm_retry">Retry Activation</string>
+
+    <!-- ★ New: Image adjustment strings -->
+    <string name="reset_all">Reset All</string>
+    <string name="fill_mode">Fill Mode</string>
+    <string name="fill_cover">Cover</string>
+    <string name="fill_cover_hint">Slide L/R</string>
+    <string name="fill_cover_desc">Swipe left/right to move</string>
+    <string name="fill_fit">Fit</string>
+    <string name="fill_fit_hint">Slide U/D</string>
+    <string name="fill_fit_desc">Swipe up/down to move</string>
+    <string name="fill_free">Free</string>
+    <string name="fill_free_hint">Zoom + Move</string>
+    <string name="fill_free_desc">Pinch to zoom, drag to move</string>
+    <string name="scale">Scale</string>
+    <string name="scale_desc">Adjust image size (independent from gestures)</string>
+    <string name="small">Small</string>
+    <string name="large">Large</string>
+    <string name="canvas_bg">Canvas Background</string>
+    <string name="canvas_bg_desc">Color of uncovered area</string>
+    <string name="mirror">Mirror</string>
+    <string name="mirror_horizontal">Flip Horizontal</string>
+    <string name="mirror_vertical">Flip Vertical</string>
+    <string name="color_adjust">Color Adjust</string>
+    <string name="brightness">Brightness</string>
+    <string name="contrast">Contrast</string>
+    <string name="saturation">Saturation</string>
 </resources>

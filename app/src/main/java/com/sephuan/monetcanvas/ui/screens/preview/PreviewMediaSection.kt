@@ -22,9 +22,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
@@ -39,15 +36,12 @@ import kotlin.math.min
 fun PreviewMediaSection(
     wallpaper: WallpaperEntity,
     player: ExoPlayer?,
-    adjustment: ImageAdjustment = ImageAdjustment.DEFAULT,
-    onAdjustmentChange: ((ImageAdjustment) -> Unit)? = null,
+    adjustment: ImageAdjustment,
+    onAdjustmentChange: ((ImageAdjustment) -> Unit)?,
+    screenWidth: Int,
+    screenHeight: Int,
     modifier: Modifier = Modifier
 ) {
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.toInt()
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.toInt()
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -59,8 +53,8 @@ fun PreviewMediaSection(
                     wallpaper = wallpaper,
                     adjustment = adjustment,
                     onAdjustmentChange = onAdjustmentChange,
-                    screenWidth = screenWidthPx,
-                    screenHeight = screenHeightPx
+                    screenWidth = screenWidth,
+                    screenHeight = screenHeight
                 )
             }
             WallpaperType.LIVE -> {
@@ -78,7 +72,6 @@ private fun StaticWallpaperLayer(
     screenWidth: Int,
     screenHeight: Int
 ) {
-    // ★ 关键修复：移除 latestAdjustment 作为 pointerInput 的 key
     val latestAdjustment by rememberUpdatedState(adjustment)
     val callback = onAdjustmentChange
 
@@ -86,25 +79,31 @@ private fun StaticWallpaperLayer(
     val imageHeight = wallpaper.height
     if (imageWidth <= 0 || imageHeight <= 0) return
 
+    // 基准缩放（COVER 铺满，FIT 适配）
     val baseScale = when (adjustment.fillMode) {
         FillMode.COVER -> max(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
         FillMode.FIT, FillMode.FREE -> min(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
     }
 
-    val effectiveScale = when (adjustment.fillMode) {
-        FillMode.COVER, FillMode.FIT -> 1f
-        FillMode.FREE -> adjustment.scale
-    }
-
-    val finalScale = baseScale * effectiveScale
+    // ★ 修改：所有模式都使用用户设置的 scale（缩放滑块）
+    val finalScale = baseScale * adjustment.scale
     val scaledWidth = imageWidth * finalScale
     val scaledHeight = imageHeight * finalScale
 
     val initialOffsetX = (screenWidth - scaledWidth) / 2f
     val initialOffsetY = (screenHeight - scaledHeight) / 2f
 
-    val offsetX = initialOffsetX + adjustment.offsetX
-    val offsetY = initialOffsetY + adjustment.offsetY
+    val offsetX = when (adjustment.fillMode) {
+        FillMode.COVER -> initialOffsetX + adjustment.offsetX
+        FillMode.FIT -> initialOffsetX
+        FillMode.FREE -> initialOffsetX + adjustment.offsetX
+    }
+
+    val offsetY = when (adjustment.fillMode) {
+        FillMode.COVER -> initialOffsetY
+        FillMode.FIT -> initialOffsetY + adjustment.offsetY
+        FillMode.FREE -> initialOffsetY + adjustment.offsetY
+    }
 
     val contentScale = when (adjustment.fillMode) {
         FillMode.COVER -> ContentScale.Crop
@@ -113,73 +112,69 @@ private fun StaticWallpaperLayer(
 
     val colorFilter = buildColorFilter(adjustment)
 
-    // 速度增益系数
-    val MOVE_SPEED = 2.2f
-    val ZOOM_SPEED = 1.8f
+    // 手势处理（双指缩放仅 FREE 模式，但滑块缩放对所有模式有效）
+    val gestureModifier = if (callback != null) {
+        Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                var isZooming = false
+                do {
+                    val event = awaitPointerEvent()
+                    val pointers = event.changes
+
+                    if (pointers.size >= 2 && latestAdjustment.fillMode == FillMode.FREE) {
+                        isZooming = true
+                        val pan = event.calculatePan()
+                        val zoom = event.calculateZoom()
+                        val newScale = (latestAdjustment.scale * zoom).coerceIn(0.2f, 8f)
+                        callback.invoke(
+                            latestAdjustment.copy(
+                                offsetX = latestAdjustment.offsetX + pan.x,
+                                offsetY = latestAdjustment.offsetY + pan.y,
+                                scale = newScale
+                            )
+                        )
+                        pointers.forEach { it.consume() }
+                    } else if (pointers.size == 1 && !isZooming) {
+                        val change = pointers.first()
+                        if (change.positionChanged()) {
+                            val delta = change.position - change.previousPosition
+                            when (latestAdjustment.fillMode) {
+                                FillMode.COVER -> {
+                                    callback.invoke(
+                                        latestAdjustment.copy(
+                                            offsetX = latestAdjustment.offsetX + delta.x
+                                        )
+                                    )
+                                }
+                                FillMode.FIT -> {
+                                    callback.invoke(
+                                        latestAdjustment.copy(
+                                            offsetY = latestAdjustment.offsetY + delta.y
+                                        )
+                                    )
+                                }
+                                FillMode.FREE -> {
+                                    callback.invoke(
+                                        latestAdjustment.copy(
+                                            offsetX = latestAdjustment.offsetX + delta.x,
+                                            offsetY = latestAdjustment.offsetY + delta.y
+                                        )
+                                    )
+                                }
+                            }
+                            change.consume()
+                        }
+                    } else if (pointers.isEmpty()) {
+                        isZooming = false
+                    }
+                } while (pointers.any { it.pressed })
+            }
+        }
+    } else Modifier
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            // ★ 只依赖 callback 作为 key，不依赖 latestAdjustment，避免手势被中断
-            .pointerInput(callback) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    var isZooming = false
-                    do {
-                        val event = awaitPointerEvent()
-                        val pointers = event.changes
-
-                        if (pointers.size >= 2 && latestAdjustment.fillMode == FillMode.FREE) {
-                            isZooming = true
-                            val pan = event.calculatePan()
-                            val zoom = event.calculateZoom()
-                            val adjustedZoom = 1f + (zoom - 1f) * ZOOM_SPEED
-                            val newScale = (latestAdjustment.scale * adjustedZoom).coerceIn(0.2f, 8f)
-                            callback?.invoke(
-                                latestAdjustment.copy(
-                                    offsetX = latestAdjustment.offsetX + pan.x,
-                                    offsetY = latestAdjustment.offsetY + pan.y,
-                                    scale = newScale
-                                )
-                            )
-                            pointers.forEach { it.consume() }
-                        } else if (pointers.size == 1 && !isZooming) {
-                            val change = pointers.first()
-                            if (change.positionChanged()) {
-                                val delta = change.position - change.previousPosition
-                                val acceleratedDelta = Offset(delta.x * MOVE_SPEED, delta.y * MOVE_SPEED)
-                                when (latestAdjustment.fillMode) {
-                                    FillMode.COVER -> {
-                                        callback?.invoke(
-                                            latestAdjustment.copy(
-                                                offsetX = latestAdjustment.offsetX + acceleratedDelta.x
-                                            )
-                                        )
-                                    }
-                                    FillMode.FIT -> {
-                                        callback?.invoke(
-                                            latestAdjustment.copy(
-                                                offsetY = latestAdjustment.offsetY + acceleratedDelta.y
-                                            )
-                                        )
-                                    }
-                                    FillMode.FREE -> {
-                                        callback?.invoke(
-                                            latestAdjustment.copy(
-                                                offsetX = latestAdjustment.offsetX + acceleratedDelta.x,
-                                                offsetY = latestAdjustment.offsetY + acceleratedDelta.y
-                                            )
-                                        )
-                                    }
-                                }
-                                change.consume()
-                            }
-                        } else if (pointers.isEmpty()) {
-                            isZooming = false
-                        }
-                    } while (pointers.any { it.pressed })
-                }
-            },
+        modifier = Modifier.fillMaxSize().then(gestureModifier),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(

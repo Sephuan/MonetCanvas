@@ -27,8 +27,7 @@ object LiveWallpaperSetter {
     }
 
     /**
-     * 保存到【预览配置】
-     * 只有系统动态壁纸预览页实例会读取这些配置。
+     * 保存预览配置（异步写入，不阻塞主线程）
      */
     fun savePendingConfig(
         context: Context,
@@ -50,21 +49,19 @@ object LiveWallpaperSetter {
 
         val currentVersion = prefs.getLong(LiveWallpaperService.KEY_PENDING_VERSION, 0L)
 
-        val success = prefs.edit()
+        // ★ 使用 apply() 替代 commit()，异步写入，不阻塞当前线程
+        prefs.edit()
             .putString(LiveWallpaperService.KEY_PENDING_PATH, videoPath)
             .putString(LiveWallpaperService.KEY_PENDING_FRAME, framePosition)
             .putString(LiveWallpaperService.KEY_PENDING_REGION, colorRegion)
             .putString(LiveWallpaperService.KEY_PENDING_TONE, tonePreference)
             .putLong(LiveWallpaperService.KEY_PENDING_VERSION, currentVersion + 1)
-            .commit()
+            .apply()
 
         Log.d(TAG, "保存预览配置: path=$videoPath, version=${currentVersion + 1}")
-        return success
+        return true
     }
 
-    /**
-     * 用户确认后：把预览配置提升为正式配置
-     */
     fun promotePendingToActive(context: Context) {
         val prefs = context.getSharedPreferences(
             LiveWallpaperService.PREFS_NAME,
@@ -82,16 +79,18 @@ object LiveWallpaperSetter {
         }
 
         val currentVersion = prefs.getLong(LiveWallpaperService.KEY_CONFIG_VERSION, 0L)
+        val newVersion = currentVersion + 1
 
+        // ★ 使用 apply() 异步写入
         prefs.edit()
             .putString(LiveWallpaperService.KEY_LIVE_PATH, pendingPath)
             .putString(LiveWallpaperService.KEY_FRAME_POSITION, pendingFrame)
             .putString(LiveWallpaperService.KEY_COLOR_REGION, pendingRegion)
             .putString(LiveWallpaperService.KEY_TONE_PREFERENCE, pendingTone)
-            .putLong(LiveWallpaperService.KEY_CONFIG_VERSION, currentVersion + 1)
-            .commit()
+            .putLong(LiveWallpaperService.KEY_CONFIG_VERSION, newVersion)
+            .apply()
 
-        Log.d(TAG, "预览配置已提升为正式配置: path=$pendingPath, version=${currentVersion + 1}")
+        Log.d(TAG, "★ 预览配置已提升为正式配置: path=$pendingPath, version=$newVersion")
     }
 
     fun hasPendingConfig(context: Context): Boolean {
@@ -112,32 +111,21 @@ object LiveWallpaperSetter {
             .remove(LiveWallpaperService.KEY_PENDING_FRAME)
             .remove(LiveWallpaperService.KEY_PENDING_REGION)
             .remove(LiveWallpaperService.KEY_PENDING_TONE)
-            .commit()
-
+            .apply()
         Log.d(TAG, "预览配置已清除")
     }
 
-    /**
-     * ★ 修复点：
-     * 1. 不再加 FLAG_ACTIVITY_NEW_TASK
-     * 2. 不再自动 fallback 到 chooser
-     * 3. 只走标准系统动态壁纸预览页
-     *
-     * 这样系统在点击“设置壁纸”后，才能继续自己的第二步选择页流程。
-     */
     fun tryActivate(context: Context): Boolean {
         val activity = context as? Activity
         if (activity == null) {
-            Log.e(TAG, "tryActivate 需要 Activity context，当前不是 Activity")
+            Log.e(TAG, "tryActivate 需要 Activity context")
             return false
         }
 
         val component = ComponentName(activity, LiveWallpaperService::class.java)
-
         val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
             putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
         }
-
         return try {
             activity.startActivity(intent)
             Log.d(TAG, "✓ ACTION_CHANGE_LIVE_WALLPAPER 启动成功")
@@ -151,24 +139,12 @@ object LiveWallpaperSetter {
     fun openAppSettings(context: Context) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)
-            if (context !is Activity) {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
         try {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "跳转应用设置失败", e)
-            try {
-                val fallback = Intent(Settings.ACTION_SETTINGS).apply {
-                    if (context !is Activity) {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                }
-                context.startActivity(fallback)
-            } catch (_: Exception) {
-            }
         }
     }
 }

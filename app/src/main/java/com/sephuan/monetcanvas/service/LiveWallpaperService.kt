@@ -73,7 +73,6 @@ class LiveWallpaperService : WallpaperService() {
             prefs.registerOnSharedPreferenceChangeListener(this)
 
             val path = resolveCurrentPath()
-
             if (!path.isNullOrBlank() && File(path).exists()) {
                 currentVideoPath = path
                 Thread { extractAndReportColors(path) }.start()
@@ -91,6 +90,7 @@ class LiveWallpaperService : WallpaperService() {
             currentHolder = holder
         }
 
+        // ★ 关键修复：每次可见时强制检查配置，确保切换生效
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
             if (!visible) {
@@ -98,32 +98,19 @@ class LiveWallpaperService : WallpaperService() {
                 return
             }
 
-            // ★ 兜底：变为可见时，如果颜色还没算出来，主动再尝试一次
-            if (computedColors == null) {
-                val path = resolveCurrentPath()
-                if (!path.isNullOrBlank() && File(path).exists()) {
-                    if (path != currentVideoPath) {
-                        currentVideoPath = path
-                        retryCount = 0
-                        mainHandler.post { loadAndPlay() }
-                    }
-                    Thread { extractAndReportColors(path) }.start()
-                }
-            }
-
-            // ★ 兜底：路径变了但还没加载
+            // 强制重新解析当前配置（每次都重新读，不依赖版本号变化）
             val latestPath = resolveCurrentPath()
-            if (!latestPath.isNullOrBlank() && latestPath != currentVideoPath && File(latestPath).exists()) {
-                currentVideoPath = latestPath
-                retryCount = 0
-                mainHandler.post { loadAndPlay() }
-                Thread { extractAndReportColors(latestPath) }.start()
-            }
+            Log.d(TAG, "onVisibilityChanged: visible=true, latestPath=$latestPath, currentPath=$currentVideoPath")
 
-            // 通知系统颜色
-            if (!isPreviewEngine && computedColors != null) {
-                mainHandler.post {
-                    try { notifyColorsChanged() } catch (_: Exception) {}
+            if (!latestPath.isNullOrBlank() && File(latestPath).exists()) {
+                // 无论是否相同，只要桌面引擎且路径有效，都重新加载（确保切换生效）
+                // 但对于预览引擎，如果路径相同则不重复加载
+                if (!isPreviewEngine || latestPath != currentVideoPath) {
+                    Log.d(TAG, "重新加载视频和颜色: $latestPath")
+                    currentVideoPath = latestPath
+                    retryCount = 0
+                    mainHandler.post { loadAndPlay() }
+                    Thread { extractAndReportColors(latestPath) }.start()
                 }
             }
 
@@ -157,15 +144,11 @@ class LiveWallpaperService : WallpaperService() {
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
             if (key == versionKey) {
                 val path = resolveCurrentPath()
-
                 if (!path.isNullOrBlank() && File(path).exists()) {
-                    val pathChanged = path != currentVideoPath
+                    Log.d(TAG, "配置变化 (isPreview=$isPreviewEngine), path=$path")
                     currentVideoPath = path
-                    Log.d(TAG, "配置更新 (isPreview=$isPreviewEngine), path=$path, changed=$pathChanged")
-
                     Thread { extractAndReportColors(path) }.start()
-
-                    if (pathChanged && currentHolder != null) {
+                    if (currentHolder != null) {
                         retryCount = 0
                         mainHandler.post { loadAndPlay() }
                     }
@@ -173,16 +156,9 @@ class LiveWallpaperService : WallpaperService() {
             }
         }
 
-        /**
-         * ★ 统一路径解析：优先读自己角色的 key，再 fallback
-         *
-         * 预览引擎：PENDING → ACTIVE
-         * 桌面引擎：ACTIVE → PENDING（兜底，解决静态→动态时 ACTIVE 还没写入的问题）
-         */
         private fun resolveCurrentPath(): String? {
             val primary = prefs.getString(pathKey, null)
             if (!primary.isNullOrBlank()) return primary
-
             // fallback
             return if (isPreviewEngine) {
                 prefs.getString(KEY_LIVE_PATH, null)
@@ -310,7 +286,7 @@ class LiveWallpaperService : WallpaperService() {
                     allSwatches.getOrNull(1)?.rgb?.let { Color.valueOf(it) }
                 )
 
-                Log.d(TAG, "★ 颜色提取完成: #${Integer.toHexString(primaryColor)} (isPreview=$isPreviewEngine)")
+                Log.d(TAG, "★ 颜色提取完成：#${Integer.toHexString(primaryColor)} (isPreview=$isPreviewEngine)")
 
                 mainHandler.post {
                     try { notifyColorsChanged() } catch (_: Exception) {}

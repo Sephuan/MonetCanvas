@@ -1,17 +1,9 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -45,6 +38,11 @@ fun PreviewScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // 屏幕真实像素尺寸
+    val displayMetrics = context.resources.displayMetrics
+    val screenWidthPx = displayMetrics.widthPixels
+    val screenHeightPx = displayMetrics.heightPixels
+
     var showApplyDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRuleSheet by remember { mutableStateOf(false) }
@@ -61,7 +59,7 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    // 初始化播放器
+    // 初始化播放器（仅动态壁纸）
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
             player?.release()
@@ -82,7 +80,7 @@ fun PreviewScreen(
         }
     }
 
-    // 加载规则
+    // 加载规则和调整参数
     LaunchedEffect(wallpaper.id) {
         val rule = viewModel.loadRuleForWallpaper(wallpaper)
         currentRule = rule
@@ -98,57 +96,52 @@ fun PreviewScreen(
         viewModel.applyWallpaper(context, wallpaper, target, rule, imageAdjustment)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(wallpaper.fileName) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 底层：全屏壁纸预览
+        PreviewMediaSection(
+            wallpaper = wallpaper,
+            player = player,
+            adjustment = imageAdjustment,
+            onAdjustmentChange = { newAdjustment ->
+                imageAdjustment = newAdjustment
+                // ★ 实时保存到数据库（无论是否设置壁纸）
+                if (wallpaper.type == WallpaperType.STATIC) {
+                    viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
                 }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            PreviewMediaSection(
-                wallpaper = wallpaper,
-                player = player,
-                adjustment = imageAdjustment,
-                onAdjustmentChange = { imageAdjustment = it },
-                modifier = Modifier.weight(1f)
-            )
+            },
+            screenWidth = screenWidthPx,
+            screenHeight = screenHeightPx,
+            modifier = Modifier.fillMaxSize()
+        )
 
-            PreviewBottomPanel(
-                wallpaper = wallpaper,
-                onBack = onBack,
-                onDelete = { showDeleteDialog = true },
-                onFullScreenClick = { onFullScreenClick(imageAdjustment) },
-                onApplyClick = { showApplyDialog = true },
-                isApplying = isApplying,
-                isWaitingConfirm = isWaitingConfirm,
-                applyButtonAlpha = 1f,
-                currentRule = currentRule,
-                extractedColors = extractedColors,
-                isAnalyzing = isAnalyzing,
-                onConfigClick = { showRuleSheet = true },
-                showReturnBanner = false,
-                bannerSuccess = false,
-                adjustment = imageAdjustment,
-                onAdjustmentChange = { imageAdjustment = it },
-                modifier = Modifier
-            )
-        }
+        // 顶层：悬浮面板
+        PreviewBottomPanel(
+            wallpaper = wallpaper,
+            onBack = onBack,
+            onDelete = { showDeleteDialog = true },
+            onFullScreenClick = { onFullScreenClick(imageAdjustment) },
+            onApplyClick = { showApplyDialog = true },
+            isApplying = isApplying,
+            isWaitingConfirm = isWaitingConfirm,
+            applyButtonAlpha = 1f,
+            currentRule = currentRule,
+            extractedColors = extractedColors,
+            isAnalyzing = isAnalyzing,
+            onConfigClick = { showRuleSheet = true },
+            showReturnBanner = false,
+            bannerSuccess = false,
+            adjustment = imageAdjustment,
+            onAdjustmentChange = { newAdjustment ->
+                imageAdjustment = newAdjustment
+                if (wallpaper.type == WallpaperType.STATIC) {
+                    viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
+                }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 
-    // 弹窗（保持原样）
+    // 弹窗（保持不变）
     if (showApplyDialog) {
         ApplyWallpaperDialog(
             isLive = wallpaper.type == WallpaperType.LIVE,

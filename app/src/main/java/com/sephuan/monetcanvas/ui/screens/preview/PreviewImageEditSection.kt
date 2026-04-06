@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -37,7 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.data.model.FillMode
 import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import kotlin.math.roundToInt
@@ -52,7 +55,7 @@ fun PreviewImageEditSection(
     Column(
         modifier = modifier.fillMaxWidth()
     ) {
-        // ━━━━━ 重置按钮 ━━━━━
+        // 重置按钮
         AnimatedVisibility(
             visible = adjustment.hasAnyAdjustment,
             enter = fadeIn(tween(200)) + expandVertically(tween(200)),
@@ -71,19 +74,19 @@ fun PreviewImageEditSection(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("重置全部")
+                    Text(stringResource(R.string.reset_all))
                 }
             }
         }
 
         // ━━━━━ 1. 填充方式 ━━━━━
-        SectionLabel("填充方式")
+        SectionLabel(stringResource(R.string.fill_mode))
         Spacer(Modifier.height(6.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FillModeChip(
-                label = "覆盖",
-                hint = "左右移动",
+                label = stringResource(R.string.fill_cover),
+                hint = stringResource(R.string.fill_cover_hint),
                 selected = adjustment.fillMode == FillMode.COVER,
                 onClick = {
                     onAdjustmentChange(
@@ -97,8 +100,8 @@ fun PreviewImageEditSection(
                 }
             )
             FillModeChip(
-                label = "填充",
-                hint = "上下移动",
+                label = stringResource(R.string.fill_fit),
+                hint = stringResource(R.string.fill_fit_hint),
                 selected = adjustment.fillMode == FillMode.FIT,
                 onClick = {
                     onAdjustmentChange(
@@ -112,8 +115,8 @@ fun PreviewImageEditSection(
                 }
             )
             FillModeChip(
-                label = "自由",
-                hint = "缩放+移动",
+                label = stringResource(R.string.fill_free),
+                hint = stringResource(R.string.fill_free_hint),
                 selected = adjustment.fillMode == FillMode.FREE,
                 onClick = {
                     onAdjustmentChange(
@@ -131,9 +134,9 @@ fun PreviewImageEditSection(
         Spacer(Modifier.height(4.dp))
         Text(
             text = when (adjustment.fillMode) {
-                FillMode.COVER -> "在壁纸上左右滑动调整位置"
-                FillMode.FIT -> "在壁纸上上下滑动调整位置"
-                FillMode.FREE -> "在壁纸上双指缩放、单指拖动"
+                FillMode.COVER -> stringResource(R.string.fill_cover_desc)
+                FillMode.FIT -> stringResource(R.string.fill_fit_desc)
+                FillMode.FREE -> stringResource(R.string.fill_free_desc)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -141,10 +144,61 @@ fun PreviewImageEditSection(
 
         SectionDivider()
 
-        // ━━━━━ 2. 背景色（所有模式都显示）━━━━━
-        SectionLabel("画布背景色")
+        // ━━━━━ 2. 缩放（新增）━━━━━
+        SectionLabel(stringResource(R.string.scale))
         Text(
-            text = "壁纸未覆盖区域的颜色（缩小或移动壁纸时可见）",
+            text = stringResource(R.string.scale_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "0.2",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = adjustment.scale,
+                onValueChange = { onAdjustmentChange(adjustment.copy(scale = it)) },
+                valueRange = 0.2f..2.0f,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "2.0",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = stringResource(R.string.small),
+                style = MaterialTheme.typography.labelSmall
+            )
+            Text(
+                text = "${(adjustment.scale * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(R.string.large),
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+
+        SectionDivider()
+
+        // ━━━━━ 3. 画布背景色 ━━━━━
+        SectionLabel(stringResource(R.string.canvas_bg))
+        Text(
+            text = stringResource(R.string.canvas_bg_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -188,8 +242,7 @@ fun PreviewImageEditSection(
                             imageVector = Icons.Outlined.Check,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = if (color == Color.White) Color.Black
-                            else Color.White
+                            tint = if (color == Color.White) Color.Black else Color.White
                         )
                     }
                 }
@@ -198,12 +251,12 @@ fun PreviewImageEditSection(
 
         SectionDivider()
 
-        // ━━━━━ 3. 镜像翻转 ━━━━━
-        SectionLabel("镜像翻转")
+        // ━━━━━ 4. 镜像翻转 ━━━━━
+        SectionLabel(stringResource(R.string.mirror))
         Spacer(Modifier.height(4.dp))
 
         MirrorRow(
-            label = "水平翻转",
+            label = stringResource(R.string.mirror_horizontal),
             checked = adjustment.mirrorHorizontal,
             onCheckedChange = {
                 onAdjustmentChange(adjustment.copy(mirrorHorizontal = it))
@@ -211,7 +264,7 @@ fun PreviewImageEditSection(
         )
 
         MirrorRow(
-            label = "垂直翻转",
+            label = stringResource(R.string.mirror_vertical),
             checked = adjustment.mirrorVertical,
             onCheckedChange = {
                 onAdjustmentChange(adjustment.copy(mirrorVertical = it))
@@ -220,12 +273,12 @@ fun PreviewImageEditSection(
 
         SectionDivider()
 
-        // ━━━━━ 4. 色彩调整 ━━━━━
-        SectionLabel("色彩调整")
+        // ━━━━━ 5. 色彩调整 ━━━━━
+        SectionLabel(stringResource(R.string.color_adjust))
         Spacer(Modifier.height(4.dp))
 
         AdjustSlider(
-            label = "亮度",
+            label = stringResource(R.string.brightness),
             value = adjustment.brightness,
             onValueChange = {
                 onAdjustmentChange(adjustment.copy(brightness = it))
@@ -233,7 +286,7 @@ fun PreviewImageEditSection(
         )
 
         AdjustSlider(
-            label = "对比度",
+            label = stringResource(R.string.contrast),
             value = adjustment.contrast,
             onValueChange = {
                 onAdjustmentChange(adjustment.copy(contrast = it))
@@ -241,7 +294,7 @@ fun PreviewImageEditSection(
         )
 
         AdjustSlider(
-            label = "饱和度",
+            label = stringResource(R.string.saturation),
             value = adjustment.saturation,
             onValueChange = {
                 onAdjustmentChange(adjustment.copy(saturation = it))
@@ -250,7 +303,7 @@ fun PreviewImageEditSection(
     }
 }
 
-// ━━━━━ 通用组件 ━━━━━
+// ━━━━━ 通用组件（保持原有）━━━━━
 
 @Composable
 private fun SectionLabel(text: String) {

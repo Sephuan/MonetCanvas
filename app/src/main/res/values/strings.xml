@@ -18,7 +18,6 @@
     <string name="filter_all">全部</string>
     <string name="filter_static">静态</string>
     <string name="filter_live">动态</string>
-    <string name="filter_favorites">收藏</string>
     <string name="empty_hint">暂无壁纸，点击右下角 + 导入</string>
     <string name="import_wallpaper">导入壁纸</string>
     <string name="live_label">动态</string>
@@ -171,9 +170,35 @@
     <string name="live_wp_manual_hint">请前往「壁纸」设置，选择「MonetCanvas」动态壁纸</string>
     <string name="live_wp_all_failed">无法打开壁纸设置页。请手动进入系统设置 → 壁纸 → 选择「MonetCanvas」</string>
 
-    <!-- ★ 新增：动态壁纸权限不足弹窗 -->
+    <!-- 动态壁纸权限不足弹窗 -->
     <string name="live_wp_perm_title">无法设置动态壁纸</string>
     <string name="live_wp_perm_desc">设置动态壁纸需要先激活 MonetCanvas 的动态壁纸服务。\n\n可能的原因：\n• 动态壁纸服务尚未激活\n• 系统限制了后台服务权限\n• 电池优化阻止了服务运行\n\n请前往系统设置，检查以下项目：\n1. 确认 MonetCanvas 的权限已全部授予\n2. 关闭电池优化（不受限制）\n3. 允许后台活动</string>
     <string name="live_wp_perm_go_settings">前往应用设置</string>
     <string name="live_wp_perm_retry">重试激活</string>
+
+    <!-- ★ 新增：图片调整界面字符串 -->
+    <string name="reset_all">重置全部</string>
+    <string name="fill_mode">填充方式</string>
+    <string name="fill_cover">覆盖</string>
+    <string name="fill_cover_hint">左右移动</string>
+    <string name="fill_cover_desc">在壁纸上左右滑动调整位置</string>
+    <string name="fill_fit">填充</string>
+    <string name="fill_fit_hint">上下移动</string>
+    <string name="fill_fit_desc">在壁纸上上下滑动调整位置</string>
+    <string name="fill_free">自由</string>
+    <string name="fill_free_hint">缩放+移动</string>
+    <string name="fill_free_desc">双指缩放、单指拖动</string>
+    <string name="scale">缩放</string>
+    <string name="scale_desc">手动调整图片大小（与滑动互不干扰）</string>
+    <string name="small">小</string>
+    <string name="large">大</string>
+    <string name="canvas_bg">画布背景色</string>
+    <string name="canvas_bg_desc">壁纸未覆盖区域的颜色</string>
+    <string name="mirror">镜像翻转</string>
+    <string name="mirror_horizontal">水平翻转</string>
+    <string name="mirror_vertical">垂直翻转</string>
+    <string name="color_adjust">色彩调整</string>
+    <string name="brightness">亮度</string>
+    <string name="contrast">对比度</string>
+    <string name="saturation">饱和度</string>
 </resources>

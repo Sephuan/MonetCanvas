@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,11 +23,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -57,7 +61,6 @@ import com.sephuan.monetcanvas.data.model.MonetRule
 import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.ExtractedColors
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @Composable
 fun PreviewBottomPanel(
@@ -85,17 +88,13 @@ fun PreviewBottomPanel(
 
     val isStatic = wallpaper.type == WallpaperType.STATIC
 
-    // 面板高度范围（像素）
     val collapsedPx = with(density) { 160.dp.toPx() }
     val expandedPx = screenHeightPx * 0.68f
-
-    // 当前面板高度
     var panelHeightPx by remember { mutableFloatStateOf(collapsedPx) }
 
     val panelHeightDp = with(density) { panelHeightPx.toDp() }
     val panelColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f)
 
-    // ★ 面板只占底部区域，不 fillMaxSize
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -103,16 +102,13 @@ fun PreviewBottomPanel(
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(panelColor)
     ) {
-        // ━━━━━ 拖拽手柄（只有这个区域拦截垂直拖拽）━━━━━
+        // 拖拽手柄
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .pointerInput(Unit) {
                     detectVerticalDragGestures { _, dragAmount ->
-                        // 向上拖 = dragAmount < 0 = 增大高度
-                        // 向下拖 = dragAmount > 0 = 减小高度
-                        panelHeightPx = (panelHeightPx - dragAmount)
-                            .coerceIn(collapsedPx, expandedPx)
+                        panelHeightPx = (panelHeightPx - dragAmount).coerceIn(collapsedPx, expandedPx)
                     }
                 }
                 .padding(vertical = 10.dp),
@@ -123,27 +119,18 @@ fun PreviewBottomPanel(
                     .width(36.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             )
         }
 
-        // ━━━━━ 标题栏 ━━━━━
+        // 标题栏
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.back),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back), tint = MaterialTheme.colorScheme.onSurface)
             }
-
             Text(
                 text = wallpaper.fileName,
                 style = MaterialTheme.typography.titleMedium,
@@ -151,24 +138,13 @@ fun PreviewBottomPanel(
                 maxLines = 1,
                 modifier = Modifier.weight(1f)
             )
-
             IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+                Icon(Icons.Outlined.Delete, stringResource(R.string.delete), tint = MaterialTheme.colorScheme.onSurface)
             }
         }
 
-        // ━━━━━ 横幅 ━━━━━
-        ReturnBannerSection(
-            visible = showReturnBanner,
-            analyzing = isAnalyzing,
-            success = bannerSuccess
-        )
+        ReturnBannerSection(visible = showReturnBanner, analyzing = isAnalyzing, success = bannerSuccess)
 
-        // ━━━━━ 标签页内容（占满剩余空间）━━━━━
         Box(modifier = Modifier.weight(1f)) {
             if (isStatic) {
                 StaticPanelContent(
@@ -179,7 +155,6 @@ fun PreviewBottomPanel(
                     extractedColors = extractedColors,
                     isAnalyzing = isAnalyzing,
                     onConfigClick = onConfigClick,
-                    applyButtonAlpha = applyButtonAlpha,
                     isApplying = isApplying,
                     isWaitingConfirm = isWaitingConfirm,
                     onFullScreenClick = onFullScreenClick,
@@ -192,7 +167,6 @@ fun PreviewBottomPanel(
                     extractedColors = extractedColors,
                     isAnalyzing = isAnalyzing,
                     onConfigClick = onConfigClick,
-                    applyButtonAlpha = applyButtonAlpha,
                     isApplying = isApplying,
                     isWaitingConfirm = isWaitingConfirm,
                     onFullScreenClick = onFullScreenClick,
@@ -203,8 +177,6 @@ fun PreviewBottomPanel(
     }
 }
 
-// ━━━━━ 静态壁纸：三个标签页 ━━━━━
-
 @Composable
 private fun StaticPanelContent(
     wallpaper: WallpaperEntity,
@@ -214,7 +186,6 @@ private fun StaticPanelContent(
     extractedColors: ExtractedColors?,
     isAnalyzing: Boolean,
     onConfigClick: () -> Unit,
-    applyButtonAlpha: Float,
     isApplying: Boolean,
     isWaitingConfirm: Boolean,
     onFullScreenClick: () -> Unit,
@@ -238,31 +209,18 @@ private fun StaticPanelContent(
                 }
             }
         ) {
-            PanelTab(
-                selected = pagerState.currentPage == 0,
-                icon = Icons.Outlined.Image,
-                label = "操作",
-                onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
-            )
-            PanelTab(
-                selected = pagerState.currentPage == 1,
-                icon = Icons.Outlined.Edit,
-                label = "调整",
-                onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
-            )
-            PanelTab(
-                selected = pagerState.currentPage == 2,
-                icon = Icons.Outlined.Palette,
-                label = "取色",
-                onClick = { scope.launch { pagerState.animateScrollToPage(2) } }
-            )
+            PanelTab(selected = pagerState.currentPage == 0, icon = Icons.Outlined.Image, label = "操作") {
+                scope.launch { pagerState.animateScrollToPage(0) }
+            }
+            PanelTab(selected = pagerState.currentPage == 1, icon = Icons.Outlined.Edit, label = "调整") {
+                scope.launch { pagerState.animateScrollToPage(1) }
+            }
+            PanelTab(selected = pagerState.currentPage == 2, icon = Icons.Outlined.Palette, label = "取色") {
+                scope.launch { pagerState.animateScrollToPage(2) }
+            }
         }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 2
-        ) { page ->
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 2) { page ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -272,42 +230,29 @@ private fun StaticPanelContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 when (page) {
-                    0 -> {
-                        PreviewActionSection(
-                            applyButtonAlpha = applyButtonAlpha,
-                            isApplying = isApplying,
-                            isWaitingConfirm = isWaitingConfirm,
-                            onFullScreenClick = onFullScreenClick,
-                            onApplyClick = onApplyClick
-                        )
-                        Spacer(Modifier.height(40.dp))
-                    }
-
-                    1 -> {
-                        PreviewImageEditSection(
-                            adjustment = adjustment,
-                            onAdjustmentChange = onAdjustmentChange
-                        )
-                        Spacer(Modifier.height(40.dp))
-                    }
-
-                    2 -> {
-                        PreviewMonetSection(
-                            wallpaper = wallpaper,
-                            currentRule = currentRule,
-                            extractedColors = extractedColors,
-                            isAnalyzing = isAnalyzing,
-                            onConfigClick = onConfigClick
-                        )
-                        Spacer(Modifier.height(40.dp))
-                    }
+                    0 -> ActionButtonsSection(
+                        isApplying = isApplying,
+                        isWaitingConfirm = isWaitingConfirm,
+                        onFullScreenClick = onFullScreenClick,
+                        onApplyClick = onApplyClick
+                    )
+                    1 -> PreviewImageEditSection(
+                        adjustment = adjustment,
+                        onAdjustmentChange = onAdjustmentChange
+                    )
+                    2 -> PreviewMonetSection(
+                        wallpaper = wallpaper,
+                        currentRule = currentRule,
+                        extractedColors = extractedColors,
+                        isAnalyzing = isAnalyzing,
+                        onConfigClick = onConfigClick
+                    )
                 }
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }
 }
-
-// ━━━━━ 动态壁纸：两个标签页 ━━━━━
 
 @Composable
 private fun LivePanelContent(
@@ -316,7 +261,6 @@ private fun LivePanelContent(
     extractedColors: ExtractedColors?,
     isAnalyzing: Boolean,
     onConfigClick: () -> Unit,
-    applyButtonAlpha: Float,
     isApplying: Boolean,
     isWaitingConfirm: Boolean,
     onFullScreenClick: () -> Unit,
@@ -340,25 +284,15 @@ private fun LivePanelContent(
                 }
             }
         ) {
-            PanelTab(
-                selected = pagerState.currentPage == 0,
-                icon = Icons.Outlined.Image,
-                label = "操作",
-                onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
-            )
-            PanelTab(
-                selected = pagerState.currentPage == 1,
-                icon = Icons.Outlined.Palette,
-                label = "取色",
-                onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
-            )
+            PanelTab(selected = pagerState.currentPage == 0, icon = Icons.Outlined.Image, label = "操作") {
+                scope.launch { pagerState.animateScrollToPage(0) }
+            }
+            PanelTab(selected = pagerState.currentPage == 1, icon = Icons.Outlined.Palette, label = "取色") {
+                scope.launch { pagerState.animateScrollToPage(1) }
+            }
         }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1
-        ) { page ->
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -368,51 +302,71 @@ private fun LivePanelContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 when (page) {
-                    0 -> {
-                        PreviewActionSection(
-                            applyButtonAlpha = applyButtonAlpha,
-                            isApplying = isApplying,
-                            isWaitingConfirm = isWaitingConfirm,
-                            onFullScreenClick = onFullScreenClick,
-                            onApplyClick = onApplyClick
-                        )
-                        Spacer(Modifier.height(40.dp))
-                    }
-
-                    1 -> {
-                        PreviewMonetSection(
-                            wallpaper = wallpaper,
-                            currentRule = currentRule,
-                            extractedColors = extractedColors,
-                            isAnalyzing = isAnalyzing,
-                            onConfigClick = onConfigClick
-                        )
-                        Spacer(Modifier.height(40.dp))
-                    }
+                    0 -> ActionButtonsSection(
+                        isApplying = isApplying,
+                        isWaitingConfirm = isWaitingConfirm,
+                        onFullScreenClick = onFullScreenClick,
+                        onApplyClick = onApplyClick
+                    )
+                    1 -> PreviewMonetSection(
+                        wallpaper = wallpaper,
+                        currentRule = currentRule,
+                        extractedColors = extractedColors,
+                        isAnalyzing = isAnalyzing,
+                        onConfigClick = onConfigClick
+                    )
                 }
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }
 }
 
-// ━━━━━ 通用标签 ━━━━━
-
 @Composable
-private fun PanelTab(
-    selected: Boolean,
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
+private fun PanelTab(selected: Boolean, icon: ImageVector, label: String, onClick: () -> Unit) {
     Tab(
         selected = selected,
         onClick = onClick,
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(5.dp))
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(label, style = MaterialTheme.typography.labelMedium)
             }
         }
     )
+}
+
+@Composable
+private fun ActionButtonsSection(
+    isApplying: Boolean,
+    isWaitingConfirm: Boolean,
+    onFullScreenClick: () -> Unit,
+    onApplyClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        OutlinedButton(
+            onClick = onFullScreenClick,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(Icons.Outlined.Fullscreen, null, Modifier.size(18.dp))
+            Text(" " + stringResource(R.string.fullscreen))
+        }
+
+        Button(
+            onClick = onApplyClick,
+            modifier = Modifier.weight(1f),
+            enabled = !isApplying && !isWaitingConfirm
+        ) {
+            if (isApplying) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Outlined.Wallpaper, null, Modifier.size(18.dp))
+            }
+            Text(" " + stringResource(R.string.set_wallpaper))
+        }
+    }
 }
