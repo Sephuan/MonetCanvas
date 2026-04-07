@@ -1,7 +1,6 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.app.Activity
-import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -50,7 +49,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.sephuan.monetcanvas.R
@@ -61,7 +59,7 @@ import com.sephuan.monetcanvas.data.model.WallpaperType
 import kotlin.math.max
 import kotlin.math.min
 
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun FullScreenPreview(
     wallpaper: WallpaperEntity,
@@ -128,14 +126,14 @@ fun FullScreenPreview(
     }
 
     // 注意：
-    // 这里故意不使用 PredictiveBackHandler / BackHandler
-    // 让 Navigation / 系统自己接管返回手势
-    // 这样系统才能显示“真正的上一页”预测画面
+    // 这里故意不写 BackHandler / PredictiveBackHandler
+    // 让系统与 Navigation 自己接管返回手势
+    // 这样才有机会显示真正的上一页预测界面
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // 不加黑色根背景，避免遮挡系统预测返回画面
+            // 根层不加背景色，避免遮挡系统预测返回界面
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -143,6 +141,7 @@ fun FullScreenPreview(
                 showControls = !showControls
             }
     ) {
+        // 当前内容层
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -233,7 +232,7 @@ fun FullScreenPreview(
                             color = Color.White,
                             maxLines = 1
                         )
-                        Spacer(Modifier.size(4.dp))
+                        Spacer(modifier = Modifier.size(4.dp))
                         Text(
                             text = "${wallpaper.width} × ${wallpaper.height}",
                             style = MaterialTheme.typography.labelSmall,
@@ -261,14 +260,18 @@ private fun StaticFullScreenContent(
             screenWidth.toFloat() / imageWidth,
             screenHeight.toFloat() / imageHeight
         )
-        FillMode.FIT, FillMode.FREE -> min(
+
+        FillMode.FIT,
+        FillMode.FREE -> min(
             screenWidth.toFloat() / imageWidth,
             screenHeight.toFloat() / imageHeight
         )
     }
 
     val effectiveScale = when (adjustment.fillMode) {
-        FillMode.COVER, FillMode.FIT -> 1f
+        FillMode.COVER,
+        FillMode.FIT -> 1f
+
         FillMode.FREE -> adjustment.scale
     }
 
@@ -345,7 +348,6 @@ private fun buildFullScreenColorFilter(adjustment: ImageAdjustment): ColorFilter
         floatArrayOf(
             contrastScale, 0f, 0f, 0f, contrastOffset,
             0f, contrastScale, 0f, 0f, contrastOffset,
-            0f, 0f, contrastScale, 0f, contrastOffset,
             0f, 0f, 0f, 1f, 0f
         )
     )

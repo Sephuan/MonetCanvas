@@ -1,5 +1,12 @@
 package com.sephuan.monetcanvas.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +56,26 @@ fun MonetNavGraph(
         startDestination = Routes.HOME,
         modifier = Modifier.fillMaxSize()
     ) {
-        composable(Routes.HOME) {
+        composable(
+            route = Routes.HOME,
+            // 进入首页时不要突兀，轻微淡入
+            enterTransition = {
+                fadeIn()
+            },
+            exitTransition = {
+                fadeOut()
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeIn()
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeOut()
+            }
+        ) {
             HomeScreen(
                 onWallpaperClick = { wallpaper ->
                     cachedWallpaper = wallpaper
@@ -64,21 +90,38 @@ fun MonetNavGraph(
 
         composable(
             route = Routes.PREVIEW,
-            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
+            enterTransition = {
+                fadeIn()
+            },
+            exitTransition = {
+                fadeOut()
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeIn()
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeOut()
+            }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
             val viewModel: NavPreviewViewModel = hiltViewModel()
 
-            var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
-            var loadFailed by remember { mutableStateOf(false) }
-            var isLoading by remember { mutableStateOf(true) }
+            var wallpaper by remember(wallpaperId) { mutableStateOf<WallpaperEntity?>(null) }
+            var loadFailed by remember(wallpaperId) { mutableStateOf(false) }
+            var isLoading by remember(wallpaperId) { mutableStateOf(true) }
 
             LaunchedEffect(wallpaperId) {
                 isLoading = true
                 loadFailed = false
 
-                if (cachedWallpaperId == wallpaperId && cachedWallpaper != null) {
-                    wallpaper = cachedWallpaper
+                val cached = cachedWallpaper
+                if (cached != null && cachedWallpaperId == wallpaperId) {
+                    wallpaper = cached
                 } else {
                     val loaded = viewModel.loadWallpaper(wallpaperId)
                     if (loaded != null) {
@@ -116,9 +159,9 @@ fun MonetNavGraph(
                         wallpaper = wallpaper!!,
                         onBack = { navController.popBackStack() },
                         onFullScreenClick = { adjustment ->
-                            cachedAdjustment = adjustment
                             cachedWallpaper = wallpaper
                             cachedWallpaperId = wallpaperId
+                            cachedAdjustment = adjustment
                             navController.navigate(Routes.fullScreen(wallpaperId))
                         }
                     )
@@ -128,14 +171,28 @@ fun MonetNavGraph(
 
         composable(
             route = Routes.FULL_SCREEN,
-            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType })
+            arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
+            enterTransition = {
+                fadeIn()
+            },
+            exitTransition = {
+                fadeOut()
+            },
+            popEnterTransition = {
+                fadeIn()
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeOut()
+            }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
             val viewModel: NavPreviewViewModel = hiltViewModel()
 
-            var wallpaper by remember { mutableStateOf<WallpaperEntity?>(null) }
-            var isLoading by remember { mutableStateOf(true) }
-            var loadFailed by remember { mutableStateOf(false) }
+            var wallpaper by remember(wallpaperId) { mutableStateOf<WallpaperEntity?>(null) }
+            var loadFailed by remember(wallpaperId) { mutableStateOf(false) }
+            var isLoading by remember(wallpaperId) { mutableStateOf(true) }
 
             LaunchedEffect(wallpaperId) {
                 isLoading = true
@@ -186,7 +243,25 @@ fun MonetNavGraph(
             }
         }
 
-        composable(Routes.SETTINGS) {
+        composable(
+            route = Routes.SETTINGS,
+            enterTransition = {
+                fadeIn()
+            },
+            exitTransition = {
+                fadeOut()
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeIn()
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right
+                ) + fadeOut()
+            }
+        ) {
             SettingsScreen(
                 onBack = { navController.popBackStack() }
             )

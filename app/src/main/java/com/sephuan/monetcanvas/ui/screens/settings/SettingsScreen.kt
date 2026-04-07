@@ -17,8 +17,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.ui.screens.settings.components.AboutSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.DarkModeSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.LanguageSection
@@ -31,15 +33,20 @@ fun SettingsScreen(
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
+    // 这里故意不使用 BackHandler / PredictiveBackHandler
+    // 让系统与 Navigation 自己接管返回手势，显示系统原生预测返回效果
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = {
+                    Text(text = stringResource(R.string.settings))
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.back)
                         )
                     }
                 }

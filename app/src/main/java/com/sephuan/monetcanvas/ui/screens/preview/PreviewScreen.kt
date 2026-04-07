@@ -1,8 +1,6 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -18,6 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -29,6 +30,7 @@ import com.sephuan.monetcanvas.data.model.WallpaperType
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
 import kotlinx.coroutines.launch
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PreviewScreen(
@@ -38,6 +40,7 @@ fun PreviewScreen(
     viewModel: PreviewViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     val displayMetrics = context.resources.displayMetrics
@@ -62,22 +65,6 @@ fun PreviewScreen(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var imageAdjustment by remember { mutableStateOf(ImageAdjustment.DEFAULT) }
 
-    val liveWallpaperLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (applyState == ApplyState.WAITING_CONFIRM) {
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
-                viewModel.onUserConfirmed(
-                    context = context,
-                    wallpaper = wallpaper,
-                    rule = currentRule ?: MonetRule()
-                )
-            } else {
-                viewModel.onUserCancelled(context)
-            }
-        }
-    }
-
     // 初始化播放器（仅动态壁纸）
     LaunchedEffect(wallpaper.filePath, wallpaper.type) {
         if (wallpaper.type == WallpaperType.LIVE) {
@@ -89,6 +76,9 @@ fun PreviewScreen(
                 prepare()
                 playWhenReady = true
             }
+        } else {
+            player?.release()
+            player = null
         }
     }
 
@@ -101,27 +91,52 @@ fun PreviewScreen(
 
     // 加载规则和调整参数
     LaunchedEffect(wallpaper.id) {
-        val rule = viewModel.loadRuleForWallpaper(wallpaper)
-        currentRule = rule
-        viewModel.analyzeColors(wallpaper, rule)
-
+        currentRule = viewModel.loadRuleForWallpaper(wallpaper)
+        currentRule?.let { rule ->
+            viewModel.analyzeColors(wallpaper, rule)
+        }
         if (wallpaper.type == WallpaperType.STATIC) {
             imageAdjustment = viewModel.loadAdjustmentForWallpaper(wallpaper)
         }
     }
 
-    // 启动动态壁纸系统确认页
-    LaunchedEffect(applyState) {
-        if (applyState == ApplyState.WAITING_CONFIRM) {
-            val intent = LiveWallpaperSetter.createActivationIntent(context)
-            liveWallpaperLauncher.launch(intent)
+    // 动态壁纸：当从系统确认页返回时，交给 ViewModel 处理
+    DisposableEffect(lifecycleOwner, isWaitingConfirm, wallpaper, currentRule) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && isWaitingConfirm) {
+                viewModel.onReturnFromSystemPage(
+                    context = context,
+                    wallpaper = wallpaper,
+                    rule = currentRule ?: MonetRule()
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
     fun handleApply(target: Int) {
         if (isApplying || isWaitingConfirm) return
         val rule = currentRule ?: MonetRule()
-        viewModel.applyWallpaper(context, wallpaper, target, rule, imageAdjustment)
+        viewModel.applyWallpaper(
+            context = context,
+            wallpaper = wallpaper,
+            target = target,
+            rule = rule,
+            adjustment = imageAdjustment
+        )
+    }
+
+    fun safeBack() {
+        player?.runCatching {
+            pause()
+            stop()
+            release()
+        }
+        player = null
+        onBack()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -144,7 +159,7 @@ fun PreviewScreen(
         // 顶层：底部面板
         PreviewBottomPanel(
             wallpaper = wallpaper,
-            onBack = onBack,
+            onBack = ::safeBack,
             onDelete = { showDeleteDialog = true },
             onFullScreenClick = { onFullScreenClick(imageAdjustment) },
             onApplyClick = { showApplyDialog = true },
@@ -196,7 +211,9 @@ fun PreviewScreen(
             onDismiss = { showDeleteDialog = false },
             onConfirm = {
                 showDeleteDialog = false
-                viewModel.deleteWallpaper(context, wallpaper) { onBack() }
+                viewModel.deleteWallpaper(context, wallpaper) {
+                    onBack()
+                }
             }
         )
     }
@@ -227,15 +244,7 @@ fun PreviewScreen(
             onRetry = {
                 viewModel.clearLiveWpResult()
                 viewModel.resetApplyState()
-                if (wallpaper.type == WallpaperType.LIVE) {
-                    viewModel.applyWallpaper(
-                        context = context,
-                        wallpaper = wallpaper,
-                        target = 0,
-                        rule = currentRule ?: MonetRule(),
-                        adjustment = imageAdjustment
-                    )
-                }
+                LiveWallpaperSetter.tryActivate(context)
             }
         )
     }

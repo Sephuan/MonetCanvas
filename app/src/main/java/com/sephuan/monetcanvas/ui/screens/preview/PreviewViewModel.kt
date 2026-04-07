@@ -1,6 +1,5 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
-import android.app.WallpaperManager
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
@@ -36,7 +35,6 @@ enum class ApplyState {
     IDLE,
     APPLYING,
     WAITING_CONFIRM,
-    CONFIRMING,   // 用户已确认，正在处理中
     SUCCESS,
     FAILED
 }
@@ -74,6 +72,8 @@ class PreviewViewModel @Inject constructor(
     private val _bannerSuccess = MutableStateFlow(false)
     val bannerSuccess: StateFlow<Boolean> = _bannerSuccess.asStateFlow()
 
+    private var wasOurLiveWallpaperActiveBeforeLaunch = false
+
     fun clearLiveWpResult() {
         _liveWpResult.value = LiveWpResult.IDLE
     }
@@ -86,7 +86,7 @@ class PreviewViewModel @Inject constructor(
         _showBanner.value = false
     }
 
-    suspend fun loadRuleForWallpaper(wallpaper: WallpaperEntity): MonetRule {
+    fun loadRuleForWallpaper(wallpaper: WallpaperEntity): MonetRule {
         return MonetRule(
             framePosition = runCatching { enumValueOf<FramePickPosition>(wallpaper.framePosition) }
                 .getOrDefault(FramePickPosition.FIRST),
@@ -174,8 +174,7 @@ class PreviewViewModel @Inject constructor(
         adjustment: ImageAdjustment = ImageAdjustment.DEFAULT
     ) {
         if (_applyState.value == ApplyState.APPLYING ||
-            _applyState.value == ApplyState.WAITING_CONFIRM ||
-            _applyState.value == ApplyState.CONFIRMING
+            _applyState.value == ApplyState.WAITING_CONFIRM
         ) return
 
         _applyState.value = ApplyState.APPLYING
@@ -198,14 +197,13 @@ class PreviewViewModel @Inject constructor(
         target: Int,
         adjustment: ImageAdjustment
     ) {
-        delay(100)
-
         val success = WallpaperSetter.setStaticWallpaper(
             context = context,
             imagePath = wallpaper.filePath,
             target = target,
             adjustment = adjustment
         )
+
         if (success) {
             repository.markAsUsed(wallpaper.id)
             _applyState.value = ApplyState.SUCCESS
@@ -245,8 +243,52 @@ class PreviewViewModel @Inject constructor(
             return
         }
 
-        _applyState.value = ApplyState.WAITING_CONFIRM
-        Log.d(TAG, "等待 UI 层启动系统确认页")
+        wasOurLiveWallpaperActiveBeforeLaunch = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+        val launched = LiveWallpaperSetter.tryActivate(context)
+
+        if (launched) {
+            _applyState.value = ApplyState.WAITING_CONFIRM
+            Log.d(TAG, "已跳转系统动态壁纸确认页")
+        } else {
+            LiveWallpaperSetter.clearPendingConfig(context)
+            _applyState.value = ApplyState.IDLE
+            _liveWpResult.value = LiveWpResult.FAILED
+        }
+    }
+
+    fun onReturnFromSystemPage(
+        context: Context,
+        wallpaper: WallpaperEntity,
+        rule: MonetRule
+    ) {
+        if (_applyState.value != ApplyState.WAITING_CONFIRM) return
+
+        viewModelScope.launch {
+            delay(350)
+
+            val hasPending = LiveWallpaperSetter.hasPendingConfig(context)
+            val isActiveNow = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+
+            if (!hasPending) {
+                Log.d(TAG, "系统页返回：无 pending 配置，重置状态")
+                _applyState.value = ApplyState.IDLE
+                return@launch
+            }
+
+            val shouldTreatAsConfirmed = when {
+                !wasOurLiveWallpaperActiveBeforeLaunch && isActiveNow -> true
+                wasOurLiveWallpaperActiveBeforeLaunch && isActiveNow -> true
+                else -> false
+            }
+
+            if (shouldTreatAsConfirmed) {
+                handleConfirmed(context, wallpaper, rule)
+            } else {
+                Log.d(TAG, "系统页返回：判定为取消")
+                LiveWallpaperSetter.clearPendingConfig(context)
+                _applyState.value = ApplyState.IDLE
+            }
+        }
     }
 
     fun onUserConfirmed(
@@ -255,11 +297,6 @@ class PreviewViewModel @Inject constructor(
         rule: MonetRule
     ) {
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
-
-        // 立即切换到 CONFIRMING 状态，防止 LaunchedEffect 再次触发
-        _applyState.value = ApplyState.CONFIRMING
-        Log.d(TAG, "用户确认了动态壁纸，开始处理")
-
         viewModelScope.launch {
             handleConfirmed(context, wallpaper, rule)
         }
@@ -267,9 +304,7 @@ class PreviewViewModel @Inject constructor(
 
     fun onUserCancelled(context: Context) {
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
-
         LiveWallpaperSetter.clearPendingConfig(context)
-        Log.d(TAG, "用户取消了动态壁纸设置")
         _applyState.value = ApplyState.IDLE
     }
 
@@ -278,43 +313,18 @@ class PreviewViewModel @Inject constructor(
         wallpaper: WallpaperEntity,
         rule: MonetRule
     ) {
-        // 1. 先提升配置
         LiveWallpaperSetter.promotePendingToActive(context)
-        Log.d(TAG, "★ 配置已提升")
+        repository.markAsUsed(wallpaper.id)
 
-        delay(200)
+        // 重新分析颜色并更新主题
+        analyzeColors(wallpaper, rule)
 
-        // 2. 分析颜色
-        val colors = ColorEngine.extractColors(
-            filePath = wallpaper.filePath,
-            rule = rule,
-            type = wallpaper.type
-        )
-        _extractedColors.value = colors
-        Log.d(TAG, "新颜色已分析: ${colors?.primary?.let { "#${Integer.toHexString(it)}" }}")
-
-        // 3. 更新 seed color
-        val currentMode = settingsDataStore.appColorModeFlow.first()
-        if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
-            settingsDataStore.saveAppSeedColor(colors?.primary)
-        }
-
-        // 4. 通知系统颜色变化
-        runCatching {
-            val wm = WallpaperManager.getInstance(context)
-            val method = wm.javaClass.getMethod("notifyColorsChanged")
-            method.invoke(wm)
-            Log.d(TAG, "已通知系统颜色变化（反射调用成功）")
-        }.onFailure {
-            Log.w(TAG, "通知系统颜色变化失败", it)
-        }
-
-        // 5. UI 反馈
         _applyState.value = ApplyState.SUCCESS
         _showBanner.value = true
         _bannerSuccess.value = true
 
         delay(1200)
+
         _showBanner.value = false
         _applyState.value = ApplyState.IDLE
     }
@@ -327,21 +337,25 @@ class PreviewViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.delete(wallpaper)
+
                 runCatching {
                     val file = File(wallpaper.filePath)
                     if (file.exists()) file.delete()
                 }
+
                 runCatching {
                     if (wallpaper.thumbnailPath != wallpaper.filePath) {
                         val thumb = File(wallpaper.thumbnailPath)
                         if (thumb.exists()) thumb.delete()
                     }
                 }
+
                 Toast.makeText(
                     context,
                     context.getString(R.string.delete) + " ✓",
                     Toast.LENGTH_SHORT
                 ).show()
+
                 onDeleted()
             } catch (e: Exception) {
                 Log.e(TAG, "deleteWallpaper failed", e)
