@@ -125,15 +125,9 @@ fun FullScreenPreview(
         onDismiss()
     }
 
-    // 注意：
-    // 这里故意不写 BackHandler / PredictiveBackHandler
-    // 让系统与 Navigation 自己接管返回手势
-    // 这样才有机会显示真正的上一页预测界面
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // 根层不加背景色，避免遮挡系统预测返回界面
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -268,20 +262,16 @@ private fun StaticFullScreenContent(
         )
     }
 
-    val effectiveScale = when (adjustment.fillMode) {
-        FillMode.COVER,
-        FillMode.FIT -> 1f
-
-        FillMode.FREE -> adjustment.scale
-    }
-
-    val finalScale = baseScale * effectiveScale
+    // ★ 与 PreviewMediaSection / WallpaperSetter 对齐：所有模式都支持 scale 滑块
+    val userScale = adjustment.scale.coerceIn(0.2f, 8f)
+    val finalScale = baseScale * userScale
     val scaledWidth = imageWidth * finalScale
     val scaledHeight = imageHeight * finalScale
 
     val initialOffsetX = (screenWidth - scaledWidth) / 2f
     val initialOffsetY = (screenHeight - scaledHeight) / 2f
 
+    // ★ 偏移逻辑与 PreviewMediaSection / WallpaperSetter 对齐
     val offsetX = when (adjustment.fillMode) {
         FillMode.COVER -> initialOffsetX + adjustment.offsetX
         FillMode.FIT -> initialOffsetX
@@ -299,7 +289,8 @@ private fun StaticFullScreenContent(
         else -> ContentScale.Fit
     }
 
-    val colorFilter = buildFullScreenColorFilter(adjustment)
+    // ★ 修正：使用与 PreviewMediaSection 完全一致的色彩矩阵
+    val colorFilter = buildColorFilter(adjustment)
 
     Box(
         modifier = Modifier
@@ -326,10 +317,15 @@ private fun StaticFullScreenContent(
     }
 }
 
-private fun buildFullScreenColorFilter(adjustment: ImageAdjustment): ColorFilter? {
+/**
+ * ★ 修正：与 PreviewMediaSection.buildColorFilter 完全一致的色彩滤镜
+ * 修复旧版 contrastMatrix 只有 15 个元素（ArrayIndexOutOfBoundsException）的 bug
+ */
+private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
     val b = adjustment.brightness
     val c = adjustment.contrast
     val s = adjustment.saturation
+
     if (b == 0f && c == 0f && s == 0f) return null
 
     val brightnessOffset = b * 255f
@@ -342,12 +338,14 @@ private fun buildFullScreenColorFilter(adjustment: ImageAdjustment): ColorFilter
         )
     )
 
+    // ★ 修正：旧版这里只有 15 个元素，现补全为 20 个（4×5 矩阵）
     val contrastScale = 1f + c
     val contrastOffset = (-0.5f * contrastScale + 0.5f) * 255f
     val contrastMatrix = ColorMatrix(
         floatArrayOf(
             contrastScale, 0f, 0f, 0f, contrastOffset,
             0f, contrastScale, 0f, 0f, contrastOffset,
+            0f, 0f, contrastScale, 0f, contrastOffset,
             0f, 0f, 0f, 1f, 0f
         )
     )

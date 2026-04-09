@@ -117,6 +117,13 @@ fun PreviewScreen(
         }
     }
 
+    fun handleAdjustmentChange(newAdjustment: ImageAdjustment) {
+        imageAdjustment = newAdjustment
+        if (wallpaper.type == WallpaperType.STATIC) {
+            viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
+        }
+    }
+
     fun handleApply(target: Int) {
         if (isApplying || isWaitingConfirm) return
         val rule = currentRule ?: MonetRule()
@@ -130,13 +137,19 @@ fun PreviewScreen(
     }
 
     fun safeBack() {
-        player?.runCatching {
-            pause()
-            stop()
-            release()
+        scope.launch {
+            if (wallpaper.type == WallpaperType.STATIC) {
+                viewModel.flushAdjustmentForWallpaper(wallpaper, imageAdjustment)
+            }
+
+            player?.runCatching {
+                pause()
+                stop()
+                release()
+            }
+            player = null
+            onBack()
         }
-        player = null
-        onBack()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -145,12 +158,7 @@ fun PreviewScreen(
             wallpaper = wallpaper,
             player = player,
             adjustment = imageAdjustment,
-            onAdjustmentChange = { newAdjustment ->
-                imageAdjustment = newAdjustment
-                if (wallpaper.type == WallpaperType.STATIC) {
-                    viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
-                }
-            },
+            onAdjustmentChange = ::handleAdjustmentChange,
             screenWidth = screenWidthPx,
             screenHeight = screenHeightPx,
             modifier = Modifier.fillMaxSize()
@@ -161,7 +169,9 @@ fun PreviewScreen(
             wallpaper = wallpaper,
             onBack = ::safeBack,
             onDelete = { showDeleteDialog = true },
-            onFullScreenClick = { onFullScreenClick(imageAdjustment) },
+            onFullScreenClick = {
+                onFullScreenClick(imageAdjustment)
+            },
             onApplyClick = { showApplyDialog = true },
             isApplying = isApplying,
             isWaitingConfirm = isWaitingConfirm,
@@ -173,12 +183,7 @@ fun PreviewScreen(
             showReturnBanner = showBanner,
             bannerSuccess = bannerSuccess,
             adjustment = imageAdjustment,
-            onAdjustmentChange = { newAdjustment ->
-                imageAdjustment = newAdjustment
-                if (wallpaper.type == WallpaperType.STATIC) {
-                    viewModel.saveAdjustmentForWallpaper(wallpaper, newAdjustment)
-                }
-            },
+            onAdjustmentChange = ::handleAdjustmentChange,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }

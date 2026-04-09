@@ -22,14 +22,17 @@ import com.sephuan.monetcanvas.util.ExtractedColors
 import com.sephuan.monetcanvas.util.LiveWallpaperSetter
 import com.sephuan.monetcanvas.util.WallpaperSetter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.io.File
-import javax.inject.Inject
+import kotlinx.coroutines.withContext
 
 enum class ApplyState {
     IDLE,
@@ -52,6 +55,7 @@ class PreviewViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "PreviewVM"
+        private const val ADJUSTMENT_SAVE_DEBOUNCE_MS = 180L
     }
 
     private val _extractedColors = MutableStateFlow<ExtractedColors?>(null)
@@ -73,6 +77,12 @@ class PreviewViewModel @Inject constructor(
     val bannerSuccess: StateFlow<Boolean> = _bannerSuccess.asStateFlow()
 
     private var wasOurLiveWallpaperActiveBeforeLaunch = false
+
+    // 静态壁纸调整参数：防抖保存，避免拖拽/缩放时频繁写数据库导致掉帧
+    private var adjustmentSaveJob: Job? = null
+    private var pendingAdjustmentWallpaper: WallpaperEntity? = null
+    private var pendingAdjustment: ImageAdjustment? = null
+    private val lastSavedAdjustments = mutableMapOf<Long, ImageAdjustment>()
 
     fun clearLiveWpResult() {
         _liveWpResult.value = LiveWpResult.IDLE
@@ -99,7 +109,8 @@ class PreviewViewModel @Inject constructor(
     }
 
     suspend fun saveRuleForWallpaper(wallpaper: WallpaperEntity, rule: MonetRule) {
-        val updated = wallpaper.copy(
+        val base = latestWallpaperOrFallback(wallpaper)
+        val updated = base.copy(
             framePosition = rule.framePosition.name,
             colorRegion = rule.colorRegion.name,
             tonePreference = rule.tonePreference.name,
@@ -109,7 +120,7 @@ class PreviewViewModel @Inject constructor(
     }
 
     fun loadAdjustmentForWallpaper(wallpaper: WallpaperEntity): ImageAdjustment {
-        return ImageAdjustment(
+        val adjustment = ImageAdjustment(
             fillMode = runCatching { enumValueOf<FillMode>(wallpaper.fillMode) }
                 .getOrDefault(FillMode.COVER),
             mirrorHorizontal = wallpaper.mirrorHorizontal,
@@ -122,25 +133,42 @@ class PreviewViewModel @Inject constructor(
             offsetY = wallpaper.adjustOffsetY,
             scale = wallpaper.adjustScale
         )
+        lastSavedAdjustments[wallpaper.id] = adjustment
+        return adjustment
     }
 
+    /**
+     * 防抖保存，供预览手势/滑块实时调用。
+     * 这样不会在每一帧手势都打一次 Room update。
+     */
     fun saveAdjustmentForWallpaper(wallpaper: WallpaperEntity, adj: ImageAdjustment) {
-        viewModelScope.launch {
-            val updated = wallpaper.copy(
-                fillMode = adj.fillMode.name,
-                mirrorHorizontal = adj.mirrorHorizontal,
-                mirrorVertical = adj.mirrorVertical,
-                brightness = adj.brightness,
-                contrast = adj.contrast,
-                saturation = adj.saturation,
-                bgColorArgb = adj.backgroundColor.toArgbInt(),
-                adjustOffsetX = adj.offsetX,
-                adjustOffsetY = adj.offsetY,
-                adjustScale = adj.scale
-            )
-            repository.update(updated)
-            Log.d(TAG, "图片调整参数已保存: ${wallpaper.fileName}")
+        pendingAdjustmentWallpaper = wallpaper
+        pendingAdjustment = adj
+
+        adjustmentSaveJob?.cancel()
+        adjustmentSaveJob = viewModelScope.launch {
+            delay(ADJUSTMENT_SAVE_DEBOUNCE_MS)
+            persistWallpaperAdjustment(wallpaper, adj)
+
+            if (pendingAdjustmentWallpaper?.id == wallpaper.id && pendingAdjustment == adj) {
+                pendingAdjustmentWallpaper = null
+                pendingAdjustment = null
+            }
         }
+    }
+
+    /**
+     * 页面退出 / 返回 / 应用壁纸前调用，立即落库一次，避免最后一次调整丢失。
+     */
+    suspend fun flushAdjustmentForWallpaper(
+        wallpaper: WallpaperEntity,
+        adj: ImageAdjustment
+    ) {
+        adjustmentSaveJob?.cancel()
+        adjustmentSaveJob = null
+        pendingAdjustmentWallpaper = null
+        pendingAdjustment = null
+        persistWallpaperAdjustment(wallpaper, adj)
     }
 
     fun analyzeColors(wallpaper: WallpaperEntity, rule: MonetRule) {
@@ -180,13 +208,16 @@ class PreviewViewModel @Inject constructor(
         _applyState.value = ApplyState.APPLYING
 
         viewModelScope.launch {
-            if (wallpaper.type == WallpaperType.STATIC && adjustment.hasAnyAdjustment) {
-                saveAdjustmentForWallpaper(wallpaper, adjustment)
-            }
-
             when (wallpaper.type) {
-                WallpaperType.STATIC -> applyStaticWallpaper(context, wallpaper, target, adjustment)
-                WallpaperType.LIVE -> applyLiveWallpaper(context, wallpaper, rule)
+                WallpaperType.STATIC -> {
+                    // 应用前先把最新调整参数立即保存一次
+                    flushAdjustmentForWallpaper(wallpaper, adjustment)
+                    applyStaticWallpaper(context, wallpaper, target, adjustment)
+                }
+
+                WallpaperType.LIVE -> {
+                    applyLiveWallpaper(context, wallpaper, rule)
+                }
             }
         }
     }
@@ -197,12 +228,15 @@ class PreviewViewModel @Inject constructor(
         target: Int,
         adjustment: ImageAdjustment
     ) {
-        val success = WallpaperSetter.setStaticWallpaper(
-            context = context,
-            imagePath = wallpaper.filePath,
-            target = target,
-            adjustment = adjustment
-        )
+        // 核心优化：位图解码 / 变换 / setBitmap 整体移出主线程
+        val success = withContext(Dispatchers.Default) {
+            WallpaperSetter.setStaticWallpaper(
+                context = context,
+                imagePath = wallpaper.filePath,
+                target = target,
+                adjustment = adjustment
+            )
+        }
 
         if (success) {
             repository.markAsUsed(wallpaper.id)
@@ -243,7 +277,9 @@ class PreviewViewModel @Inject constructor(
             return
         }
 
-        wasOurLiveWallpaperActiveBeforeLaunch = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+        wasOurLiveWallpaperActiveBeforeLaunch =
+            LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+
         val launched = LiveWallpaperSetter.tryActivate(context)
 
         if (launched) {
@@ -364,6 +400,36 @@ class PreviewViewModel @Inject constructor(
         }
     }
 
+    private suspend fun persistWallpaperAdjustment(
+        wallpaper: WallpaperEntity,
+        adj: ImageAdjustment
+    ) {
+        if (lastSavedAdjustments[wallpaper.id] == adj) return
+
+        val base = latestWallpaperOrFallback(wallpaper)
+        val updated = base.copy(
+            fillMode = adj.fillMode.name,
+            mirrorHorizontal = adj.mirrorHorizontal,
+            mirrorVertical = adj.mirrorVertical,
+            brightness = adj.brightness,
+            contrast = adj.contrast,
+            saturation = adj.saturation,
+            bgColorArgb = adj.backgroundColor.toArgbInt(),
+            adjustOffsetX = adj.offsetX,
+            adjustOffsetY = adj.offsetY,
+            adjustScale = adj.scale
+        )
+
+        repository.update(updated)
+        lastSavedAdjustments[wallpaper.id] = adj
+    }
+
+    private suspend fun latestWallpaperOrFallback(wallpaper: WallpaperEntity): WallpaperEntity {
+        return withContext(Dispatchers.IO) {
+            repository.getById(wallpaper.id)
+        } ?: wallpaper
+    }
+
     private fun Color.toArgbInt(): Int {
         return android.graphics.Color.argb(
             (alpha * 255).toInt(),
@@ -371,5 +437,10 @@ class PreviewViewModel @Inject constructor(
             (green * 255).toInt(),
             (blue * 255).toInt()
         )
+    }
+
+    override fun onCleared() {
+        adjustmentSaveJob?.cancel()
+        super.onCleared()
     }
 }

@@ -9,18 +9,20 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.util.DisplayMetrics
+import android.graphics.RectF
 import android.util.Log
 import android.view.WindowManager
 import com.sephuan.monetcanvas.data.model.FillMode
 import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import java.io.File
+import kotlin.math.roundToInt
 
 object WallpaperSetter {
 
     private const val TAG = "WallpaperSetter"
-    // 降低最大图片尺寸，减少解码和变换耗时
-    private const val MAX_BITMAP_SIZE = 1440
+    private const val MAX_BITMAP_SIZE = 1600
+    private const val MIN_BITMAP_SIZE = 720
+    private const val DECODE_OVERSCAN = 1.12f
 
     fun setStaticWallpaper(
         context: Context,
@@ -35,12 +37,16 @@ object WallpaperSetter {
         }
 
         return try {
-            val wm = WallpaperManager.getInstance(context)
-            val screenSize = getScreenSize(context)
-            val screenW = screenSize.first
-            val screenH = screenSize.second
+            val wallpaperManager = WallpaperManager.getInstance(context)
+            val (screenW, screenH) = getScreenSize(context)
 
-            val originalBitmap = decodeSampledBitmap(imagePath, screenW, screenH)
+            val originalBitmap = decodeSampledBitmap(
+                imagePath = imagePath,
+                targetWidth = screenW,
+                targetHeight = screenH,
+                adjustment = adjustment
+            )
+
             if (originalBitmap == null) {
                 Log.e(TAG, "无法解码图片: $imagePath")
                 return false
@@ -54,12 +60,30 @@ object WallpaperSetter {
             )
 
             when (target) {
-                1 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                2 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_LOCK)
-                3 -> wm.setBitmap(finalBitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                1 -> wallpaperManager.setBitmap(
+                    finalBitmap,
+                    null,
+                    true,
+                    WallpaperManager.FLAG_SYSTEM
+                )
+
+                2 -> wallpaperManager.setBitmap(
+                    finalBitmap,
+                    null,
+                    true,
+                    WallpaperManager.FLAG_LOCK
+                )
+
+                3 -> wallpaperManager.setBitmap(
+                    finalBitmap,
+                    null,
+                    true,
+                    WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                )
+
                 else -> {
-                    originalBitmap.recycle()
                     if (finalBitmap !== originalBitmap) finalBitmap.recycle()
+                    originalBitmap.recycle()
                     return false
                 }
             }
@@ -74,9 +98,31 @@ object WallpaperSetter {
     }
 
     /**
-     * 优化采样：根据目标屏幕尺寸和最大允许尺寸计算采样率，避免解码超大图
+     * Keep the old function signature.
      */
-    private fun decodeSampledBitmap(imagePath: String, targetWidth: Int, targetHeight: Int): Bitmap? {
+    @Suppress("unused")
+    private fun decodeSampledBitmap(
+        imagePath: String,
+        targetWidth: Int,
+        targetHeight: Int
+    ): Bitmap? {
+        return decodeSampledBitmap(
+            imagePath = imagePath,
+            targetWidth = targetWidth,
+            targetHeight = targetHeight,
+            adjustment = ImageAdjustment.DEFAULT
+        )
+    }
+
+    /**
+     * Optimized decode path used internally.
+     */
+    private fun decodeSampledBitmap(
+        imagePath: String,
+        targetWidth: Int,
+        targetHeight: Int,
+        adjustment: ImageAdjustment
+    ): Bitmap? {
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
@@ -86,18 +132,51 @@ object WallpaperSetter {
         val originalHeight = options.outHeight
         if (originalWidth <= 0 || originalHeight <= 0) return null
 
-        // 计算合适的采样率：使得解码后的图片尺寸接近目标尺寸或 MAX_BITMAP_SIZE 的较小者
-        val maxDimension = maxOf(originalWidth, originalHeight)
-        val targetMaxDimension = minOf(maxOf(targetWidth, targetHeight), MAX_BITMAP_SIZE)
-        var sampleSize = 1
-        if (maxDimension > targetMaxDimension) {
-            sampleSize = (maxDimension.toFloat() / targetMaxDimension).toInt().coerceAtLeast(1)
+        val requestedEdge = calculateRequestedDecodeEdge(
+            targetWidth = targetWidth,
+            targetHeight = targetHeight,
+            adjustment = adjustment
+        )
+
+        var inSampleSize = 1
+        var halfWidth = originalWidth / 2
+        var halfHeight = originalHeight / 2
+
+        while ((halfWidth / inSampleSize) >= requestedEdge &&
+            (halfHeight / inSampleSize) >= requestedEdge
+        ) {
+            inSampleSize *= 2
         }
 
-        options.inSampleSize = sampleSize
-        options.inJustDecodeBounds = false
-        options.inPreferredConfig = Bitmap.Config.RGB_565
-        return BitmapFactory.decodeFile(imagePath, options)
+        val decodeOptions = BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+            inJustDecodeBounds = false
+            inPreferredConfig = if (needsHighPrecision(adjustment)) {
+                Bitmap.Config.ARGB_8888
+            } else {
+                Bitmap.Config.RGB_565
+            }
+        }
+
+        return BitmapFactory.decodeFile(imagePath, decodeOptions)
+    }
+
+    private fun calculateRequestedDecodeEdge(
+        targetWidth: Int,
+        targetHeight: Int,
+        adjustment: ImageAdjustment
+    ): Int {
+        val screenEdge = maxOf(targetWidth, targetHeight).coerceAtLeast(1)
+        val scaleFactor = adjustment.scale.coerceAtLeast(1f)
+        return (screenEdge * DECODE_OVERSCAN * scaleFactor)
+            .roundToInt()
+            .coerceIn(MIN_BITMAP_SIZE, MAX_BITMAP_SIZE)
+    }
+
+    private fun needsHighPrecision(adjustment: ImageAdjustment): Boolean {
+        return adjustment.brightness != 0f ||
+                adjustment.contrast != 0f ||
+                adjustment.saturation != 0f
     }
 
     private fun applyAdjustments(
@@ -106,78 +185,102 @@ object WallpaperSetter {
         targetWidth: Int,
         targetHeight: Int
     ): Bitmap {
-        val flipped = applyMirror(original, adjustment.mirrorHorizontal, adjustment.mirrorVertical)
+        val srcW = original.width.toFloat().coerceAtLeast(1f)
+        val srcH = original.height.toFloat().coerceAtLeast(1f)
+        val dstW = targetWidth.toFloat().coerceAtLeast(1f)
+        val dstH = targetHeight.toFloat().coerceAtLeast(1f)
 
-        val srcW = flipped.width.toFloat()
-        val srcH = flipped.height.toFloat()
-        val dstW = targetWidth.toFloat()
-        val dstH = targetHeight.toFloat()
-
-        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-        val bgArgb = android.graphics.Color.argb(
-            (adjustment.backgroundColor.alpha * 255).toInt(),
-            (adjustment.backgroundColor.red * 255).toInt(),
-            (adjustment.backgroundColor.green * 255).toInt(),
-            (adjustment.backgroundColor.blue * 255).toInt()
+        val result = Bitmap.createBitmap(
+            targetWidth.coerceAtLeast(1),
+            targetHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
         )
-        canvas.drawColor(bgArgb)
+
+        val canvas = Canvas(result)
+        canvas.drawColor(colorToArgb(adjustment.backgroundColor))
 
         val baseScale = when (adjustment.fillMode) {
             FillMode.COVER -> maxOf(dstW / srcW, dstH / srcH)
-            FillMode.FIT, FillMode.FREE -> minOf(dstW / srcW, dstH / srcH)
+            FillMode.FIT,
+            FillMode.FREE -> minOf(dstW / srcW, dstH / srcH)
         }
 
-        val effectiveScale = when (adjustment.fillMode) {
-            FillMode.COVER, FillMode.FIT -> 1f
-            FillMode.FREE -> adjustment.scale
+        // Keep behavior aligned with current preview:
+        // all modes can use the scale slider.
+        val userScale = adjustment.scale.coerceIn(0.2f, 8f)
+        val finalScale = baseScale * userScale
+
+        val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
+        val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
+
+        val matrix = Matrix().apply {
+            setScale(finalScale * mirrorX, finalScale * mirrorY)
         }
 
-        val finalScale = baseScale * effectiveScale
-        val scaledW = srcW * finalScale
-        val scaledH = srcH * finalScale
+        val srcRect = RectF(0f, 0f, srcW, srcH)
+        val mappedRect = RectF()
+        matrix.mapRect(mappedRect, srcRect)
 
-        val centerX = (dstW - scaledW) / 2f
-        val centerY = (dstH - scaledH) / 2f
+        val centeredX = (dstW - mappedRect.width()) / 2f - mappedRect.left
+        val centeredY = (dstH - mappedRect.height()) / 2f - mappedRect.top
 
-        val offsetX = when (adjustment.fillMode) {
-            FillMode.COVER -> centerX + adjustment.offsetX
-            FillMode.FIT -> centerX
-            FillMode.FREE -> centerX + adjustment.offsetX
+        val extraOffsetX = when (adjustment.fillMode) {
+            FillMode.COVER -> adjustment.offsetX
+            FillMode.FIT -> 0f
+            FillMode.FREE -> adjustment.offsetX
         }
 
-        val offsetY = when (adjustment.fillMode) {
-            FillMode.COVER -> centerY
-            FillMode.FIT -> centerY + adjustment.offsetY
-            FillMode.FREE -> centerY + adjustment.offsetY
+        val extraOffsetY = when (adjustment.fillMode) {
+            FillMode.COVER -> 0f
+            FillMode.FIT -> adjustment.offsetY
+            FillMode.FREE -> adjustment.offsetY
         }
 
-        val matrix = Matrix()
-        matrix.setScale(finalScale, finalScale)
-        matrix.postTranslate(offsetX, offsetY)
+        matrix.postTranslate(
+            centeredX + extraOffsetX,
+            centeredY + extraOffsetY
+        )
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         buildColorFilter(adjustment)?.let { paint.colorFilter = it }
 
-        canvas.drawBitmap(flipped, matrix, paint)
-
-        if (flipped !== original) flipped.recycle()
+        canvas.drawBitmap(original, matrix, paint)
         return result
     }
 
-    private fun applyMirror(bitmap: Bitmap, mirrorH: Boolean, mirrorV: Boolean): Bitmap {
+    /**
+     * Keep the old function. It is no longer the main path,
+     * but stays here so previous functionality is not removed.
+     */
+    @Suppress("unused")
+    private fun applyMirror(
+        bitmap: Bitmap,
+        mirrorH: Boolean,
+        mirrorV: Boolean
+    ): Bitmap {
         if (!mirrorH && !mirrorV) return bitmap
+
         val matrix = Matrix()
         val sx = if (mirrorH) -1f else 1f
         val sy = if (mirrorV) -1f else 1f
         matrix.setScale(sx, sy, bitmap.width / 2f, bitmap.height / 2f)
-        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+
+        return Bitmap.createBitmap(
+            bitmap,
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+            matrix,
+            true
+        )
     }
 
     private fun buildColorFilter(adjustment: ImageAdjustment): ColorMatrixColorFilter? {
         val b = adjustment.brightness
         val c = adjustment.contrast
         val s = adjustment.saturation
+
         if (b == 0f && c == 0f && s == 0f) return null
 
         val brightnessOffset = b * 255f
@@ -201,8 +304,9 @@ object WallpaperSetter {
             )
         )
 
-        val saturationMatrix = ColorMatrix()
-        saturationMatrix.setSaturation((1f + s).coerceIn(0f, 2f))
+        val saturationMatrix = ColorMatrix().apply {
+            setSaturation((1f + s).coerceIn(0f, 2f))
+        }
 
         val result = ColorMatrix()
         result.postConcat(brightnessMatrix)
@@ -213,9 +317,28 @@ object WallpaperSetter {
     }
 
     private fun getScreenSize(context: Context): Pair<Int, Int> {
-        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = DisplayMetrics()
-        wm.defaultDisplay.getRealMetrics(metrics)
-        return Pair(metrics.widthPixels, metrics.heightPixels)
+        return runCatching {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val bounds = wm.currentWindowMetrics.bounds
+            Pair(
+                bounds.width().coerceAtLeast(1),
+                bounds.height().coerceAtLeast(1)
+            )
+        }.getOrElse {
+            val dm = context.resources.displayMetrics
+            Pair(
+                dm.widthPixels.coerceAtLeast(1),
+                dm.heightPixels.coerceAtLeast(1)
+            )
+        }
+    }
+
+    private fun colorToArgb(color: androidx.compose.ui.graphics.Color): Int {
+        return android.graphics.Color.argb(
+            (color.alpha * 255).toInt(),
+            (color.red * 255).toInt(),
+            (color.green * 255).toInt(),
+            (color.blue * 255).toInt()
+        )
     }
 }

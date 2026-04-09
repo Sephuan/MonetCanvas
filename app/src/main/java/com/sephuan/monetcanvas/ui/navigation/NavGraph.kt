@@ -3,6 +3,7 @@ package com.sephuan.monetcanvas.ui.navigation
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -43,6 +44,10 @@ private object Routes {
     fun fullScreen(id: Long) = "full_screen/$id"
 }
 
+private fun String?.isFullScreenRoute(): Boolean {
+    return this?.startsWith("full_screen") == true
+}
+
 @Composable
 fun MonetNavGraph(
     navController: NavHostController = rememberNavController()
@@ -58,22 +63,23 @@ fun MonetNavGraph(
     ) {
         composable(
             route = Routes.HOME,
-            // 进入首页时不要突兀，轻微淡入
             enterTransition = {
-                fadeIn()
+                fadeIn(animationSpec = tween(220))
             },
             exitTransition = {
-                fadeOut()
+                fadeOut(animationSpec = tween(160))
             },
             popEnterTransition = {
                 slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeIn()
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(280)
+                ) + fadeIn(animationSpec = tween(220))
             },
             popExitTransition = {
                 slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeOut()
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(240)
+                ) + fadeOut(animationSpec = tween(160))
             }
         ) {
             HomeScreen(
@@ -92,20 +98,33 @@ fun MonetNavGraph(
             route = Routes.PREVIEW,
             arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
             enterTransition = {
-                fadeIn()
+                fadeIn(animationSpec = tween(180))
             },
             exitTransition = {
-                fadeOut()
+                // 打开全屏页时，底层预览页保持稳定，不再做突兀的退场动画
+                if (targetState.destination.route.isFullScreenRoute()) {
+                    ExitTransition.None
+                } else {
+                    fadeOut(animationSpec = tween(160))
+                }
             },
             popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeIn()
+                // 从全屏页返回时，不让预览页再“滑进来”
+                // 只显示全屏层自己淡出/缩回，更像覆盖层关闭
+                if (initialState.destination.route.isFullScreenRoute()) {
+                    EnterTransition.None
+                } else {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(280)
+                    ) + fadeIn(animationSpec = tween(220))
+                }
             },
             popExitTransition = {
                 slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeOut()
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(240)
+                ) + fadeOut(animationSpec = tween(160))
             }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
@@ -173,18 +192,24 @@ fun MonetNavGraph(
             route = Routes.FULL_SCREEN,
             arguments = listOf(navArgument("wallpaperId") { type = NavType.LongType }),
             enterTransition = {
-                fadeIn()
+                // 更像“全屏覆盖层展开”
+                fadeIn(animationSpec = tween(180)) + scaleIn(
+                    animationSpec = tween(220),
+                    initialScale = 0.985f
+                )
             },
             exitTransition = {
-                fadeOut()
+                fadeOut(animationSpec = tween(160))
             },
             popEnterTransition = {
-                fadeIn()
+                fadeIn(animationSpec = tween(160))
             },
             popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeOut()
+                // 返回预览页时，仅让全屏页轻微缩小并淡出
+                fadeOut(animationSpec = tween(180)) + scaleOut(
+                    animationSpec = tween(220),
+                    targetScale = 0.985f
+                )
             }
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getLong("wallpaperId") ?: -1L
@@ -246,20 +271,22 @@ fun MonetNavGraph(
         composable(
             route = Routes.SETTINGS,
             enterTransition = {
-                fadeIn()
+                fadeIn(animationSpec = tween(180))
             },
             exitTransition = {
-                fadeOut()
+                fadeOut(animationSpec = tween(160))
             },
             popEnterTransition = {
                 slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeIn()
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(280)
+                ) + fadeIn(animationSpec = tween(220))
             },
             popExitTransition = {
                 slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right
-                ) + fadeOut()
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(240)
+                ) + fadeOut(animationSpec = tween(160))
             }
         ) {
             SettingsScreen(
