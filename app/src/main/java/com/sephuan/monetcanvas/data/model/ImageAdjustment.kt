@@ -3,9 +3,9 @@ package com.sephuan.monetcanvas.data.model
 import androidx.compose.ui.graphics.Color
 
 enum class FillMode {
-    COVER,
-    FIT,
-    FREE
+    COVER,    // 覆盖（等比缩放铺满）
+    FIT,      // 适应（等比缩放留白）
+    STRETCH   // 拉伸（不等比拉伸铺满）
 }
 
 data class ImageAdjustment(
@@ -33,6 +33,10 @@ data class ImageAdjustment(
                 scale != 1f
 
     companion object {
+        // ★ 全局统一的缩放限制常量
+        const val SCALE_MIN = 0.2f
+        const val SCALE_MAX = 3.0f
+
         val DEFAULT = ImageAdjustment()
 
         val BACKGROUND_COLORS = listOf(

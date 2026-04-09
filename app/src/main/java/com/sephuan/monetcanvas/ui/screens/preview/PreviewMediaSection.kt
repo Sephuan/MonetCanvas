@@ -14,8 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
@@ -75,44 +73,13 @@ private fun StaticWallpaperLayer(
     val latestAdjustment by rememberUpdatedState(adjustment)
     val callback = onAdjustmentChange
 
-    val imageWidth = wallpaper.width
-    val imageHeight = wallpaper.height
-    if (imageWidth <= 0 || imageHeight <= 0) return
-
-    // 基准缩放（COVER 铺满，FIT 适配）
-    val baseScale = when (adjustment.fillMode) {
-        FillMode.COVER -> max(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
-        FillMode.FIT, FillMode.FREE -> min(screenWidth.toFloat() / imageWidth, screenHeight.toFloat() / imageHeight)
-    }
-
-    // ★ 修改：所有模式都使用用户设置的 scale（缩放滑块）
-    val finalScale = baseScale * adjustment.scale
-    val scaledWidth = imageWidth * finalScale
-    val scaledHeight = imageHeight * finalScale
-
-    val initialOffsetX = (screenWidth - scaledWidth) / 2f
-    val initialOffsetY = (screenHeight - scaledHeight) / 2f
-
-    val offsetX = when (adjustment.fillMode) {
-        FillMode.COVER -> initialOffsetX + adjustment.offsetX
-        FillMode.FIT -> initialOffsetX
-        FillMode.FREE -> initialOffsetX + adjustment.offsetX
-    }
-
-    val offsetY = when (adjustment.fillMode) {
-        FillMode.COVER -> initialOffsetY
-        FillMode.FIT -> initialOffsetY + adjustment.offsetY
-        FillMode.FREE -> initialOffsetY + adjustment.offsetY
-    }
-
-    val contentScale = when (adjustment.fillMode) {
-        FillMode.COVER -> ContentScale.Crop
-        else -> ContentScale.Fit
-    }
+    val imageWidth = wallpaper.width.toFloat()
+    val imageHeight = wallpaper.height.toFloat()
+    if (imageWidth <= 0f || imageHeight <= 0f) return
 
     val colorFilter = buildColorFilter(adjustment)
 
-    // 手势处理（双指缩放仅 FREE 模式，但滑块缩放对所有模式有效）
+    // ━━━━━ 手势处理（拉伸模式无手势，COVER/FIT 自由拖动+缩放） ━━━━━
     val gestureModifier = if (callback != null) {
         Modifier.pointerInput(Unit) {
             awaitEachGesture {
@@ -122,11 +89,17 @@ private fun StaticWallpaperLayer(
                     val event = awaitPointerEvent()
                     val pointers = event.changes
 
-                    if (pointers.size >= 2 && latestAdjustment.fillMode == FillMode.FREE) {
+                    // STRETCH 模式下忽略手势操作
+                    if (latestAdjustment.fillMode == FillMode.STRETCH) {
+                        continue
+                    }
+
+                    if (pointers.size >= 2) {
                         isZooming = true
                         val pan = event.calculatePan()
                         val zoom = event.calculateZoom()
-                        val newScale = (latestAdjustment.scale * zoom).coerceIn(0.2f, 8f)
+                        val newScale = (latestAdjustment.scale * zoom)
+                            .coerceIn(ImageAdjustment.SCALE_MIN, ImageAdjustment.SCALE_MAX)
                         callback.invoke(
                             latestAdjustment.copy(
                                 offsetX = latestAdjustment.offsetX + pan.x,
@@ -139,30 +112,13 @@ private fun StaticWallpaperLayer(
                         val change = pointers.first()
                         if (change.positionChanged()) {
                             val delta = change.position - change.previousPosition
-                            when (latestAdjustment.fillMode) {
-                                FillMode.COVER -> {
-                                    callback.invoke(
-                                        latestAdjustment.copy(
-                                            offsetX = latestAdjustment.offsetX + delta.x
-                                        )
-                                    )
-                                }
-                                FillMode.FIT -> {
-                                    callback.invoke(
-                                        latestAdjustment.copy(
-                                            offsetY = latestAdjustment.offsetY + delta.y
-                                        )
-                                    )
-                                }
-                                FillMode.FREE -> {
-                                    callback.invoke(
-                                        latestAdjustment.copy(
-                                            offsetX = latestAdjustment.offsetX + delta.x,
-                                            offsetY = latestAdjustment.offsetY + delta.y
-                                        )
-                                    )
-                                }
-                            }
+                            // COVER 和 FIT 模式统一允许自由 X/Y 轴移动
+                            callback.invoke(
+                                latestAdjustment.copy(
+                                    offsetX = latestAdjustment.offsetX + delta.x,
+                                    offsetY = latestAdjustment.offsetY + delta.y
+                                )
+                            )
                             change.consume()
                         }
                     } else if (pointers.isEmpty()) {
@@ -173,24 +129,53 @@ private fun StaticWallpaperLayer(
         }
     } else Modifier
 
+    // ━━━━━ 渲染计算（Compose 与 Canvas Matrix 映射算法） ━━━━━
     Box(
-        modifier = Modifier.fillMaxSize().then(gestureModifier),
+        modifier = Modifier
+            .fillMaxSize()
+            .then(gestureModifier),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
             model = wallpaper.filePath,
             contentDescription = wallpaper.fileName,
-            contentScale = contentScale,
+            contentScale = ContentScale.FillBounds, // 基底铺满，由 graphicsLayer 修正确切比例
             colorFilter = colorFilter,
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
                     val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
-                    scaleX = finalScale * mirrorX
-                    scaleY = finalScale * mirrorY
-                    translationX = offsetX
-                    translationY = offsetY
+
+                    if (adjustment.fillMode == FillMode.STRETCH) {
+                        // STRETCH: 强制填满屏幕，直接应用镜像
+                        scaleX = mirrorX
+                        scaleY = mirrorY
+                        translationX = 0f
+                        translationY = 0f
+                    } else {
+                        // COVER & FIT
+                        val baseScale = if (adjustment.fillMode == FillMode.COVER) {
+                            max(screenWidth / imageWidth, screenHeight / imageHeight)
+                        } else {
+                            min(screenWidth / imageWidth, screenHeight / imageHeight)
+                        }
+
+                        val finalScale = baseScale * adjustment.scale
+
+                        // 由于 AsyncImage 使用了 FillBounds 撑满屏幕，
+                        // 我们需要计算出实际画面该有的视觉宽高，然后除以屏幕宽高进行反向修正。
+                        val visualWidth = imageWidth * finalScale
+                        val visualHeight = imageHeight * finalScale
+
+                        scaleX = (visualWidth / screenWidth) * mirrorX
+                        scaleY = (visualHeight / screenHeight) * mirrorY
+
+                        // 默认 transformOrigin = Center，保证缩放后依旧居中。
+                        // 此时的偏移量就是用户手指滑动的绝对物理距离。
+                        translationX = adjustment.offsetX
+                        translationY = adjustment.offsetY
+                    }
                 }
         )
     }

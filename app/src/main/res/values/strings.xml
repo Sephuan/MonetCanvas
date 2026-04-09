@@ -176,20 +176,20 @@
     <string name="live_wp_perm_go_settings">前往应用设置</string>
     <string name="live_wp_perm_retry">重试激活</string>
 
-    <!-- ★ 新增：图片调整界面字符串 -->
+    <!-- ★ 修改：图片调整界面字符串 -->
     <string name="reset_all">重置全部</string>
     <string name="fill_mode">填充方式</string>
     <string name="fill_cover">覆盖</string>
-    <string name="fill_cover_hint">左右移动</string>
-    <string name="fill_cover_desc">在壁纸上左右滑动调整位置</string>
-    <string name="fill_fit">填充</string>
-    <string name="fill_fit_hint">上下移动</string>
-    <string name="fill_fit_desc">在壁纸上上下滑动调整位置</string>
-    <string name="fill_free">自由</string>
-    <string name="fill_free_hint">缩放+移动</string>
-    <string name="fill_free_desc">双指缩放、单指拖动</string>
+    <string name="fill_cover_hint">拖动+缩放</string>
+    <string name="fill_cover_desc">单指拖动位置，双指放大缩小</string>
+    <string name="fill_fit">适应</string>
+    <string name="fill_fit_hint">拖动+缩放</string>
+    <string name="fill_fit_desc">单指拖动位置，双指放大缩小</string>
+    <string name="fill_stretch">拉伸</string>
+    <string name="fill_stretch_hint">铺满屏幕</string>
+    <string name="fill_stretch_desc">不等比拉伸，强制填满整个屏幕</string>
     <string name="scale">缩放</string>
-    <string name="scale_desc">手动调整图片大小（与滑动互不干扰）</string>
+    <string name="scale_desc">手动调整图片大小（与手势缩放同步）</string>
     <string name="small">小</string>
     <string name="large">大</string>
     <string name="canvas_bg">画布背景色</string>

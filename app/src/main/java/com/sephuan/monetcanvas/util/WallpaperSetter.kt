@@ -98,7 +98,7 @@ object WallpaperSetter {
     }
 
     /**
-     * Keep the old function signature.
+     * 保留旧签名以兼容外部调用
      */
     @Suppress("unused")
     private fun decodeSampledBitmap(
@@ -115,7 +115,7 @@ object WallpaperSetter {
     }
 
     /**
-     * Optimized decode path used internally.
+     * 内部使用的优化解码路径
      */
     private fun decodeSampledBitmap(
         imagePath: String,
@@ -167,7 +167,11 @@ object WallpaperSetter {
         adjustment: ImageAdjustment
     ): Int {
         val screenEdge = maxOf(targetWidth, targetHeight).coerceAtLeast(1)
-        val scaleFactor = adjustment.scale.coerceAtLeast(1f)
+        // 限制解码时参考的缩放比例，防止内存溢出或过度模糊
+        val scaleFactor = adjustment.scale.coerceIn(
+            ImageAdjustment.SCALE_MIN,
+            ImageAdjustment.SCALE_MAX
+        )
         return (screenEdge * DECODE_OVERSCAN * scaleFactor)
             .roundToInt()
             .coerceIn(MIN_BITMAP_SIZE, MAX_BITMAP_SIZE)
@@ -199,47 +203,49 @@ object WallpaperSetter {
         val canvas = Canvas(result)
         canvas.drawColor(colorToArgb(adjustment.backgroundColor))
 
-        val baseScale = when (adjustment.fillMode) {
-            FillMode.COVER -> maxOf(dstW / srcW, dstH / srcH)
-            FillMode.FIT,
-            FillMode.FREE -> minOf(dstW / srcW, dstH / srcH)
-        }
-
-        // Keep behavior aligned with current preview:
-        // all modes can use the scale slider.
-        val userScale = adjustment.scale.coerceIn(0.2f, 8f)
-        val finalScale = baseScale * userScale
-
         val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
         val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
 
-        val matrix = Matrix().apply {
-            setScale(finalScale * mirrorX, finalScale * mirrorY)
+        val matrix = Matrix()
+
+        if (adjustment.fillMode == FillMode.STRETCH) {
+            // 拉伸模式：无视拖动偏移量，分别在 X Y 轴拉伸
+            val scaleX = (dstW / srcW) * mirrorX
+            val scaleY = (dstH / srcH) * mirrorY
+            matrix.setScale(scaleX, scaleY)
+
+            val srcRect = RectF(0f, 0f, srcW, srcH)
+            val mappedRect = RectF()
+            matrix.mapRect(mappedRect, srcRect)
+
+            val dx = dstW / 2f - mappedRect.centerX()
+            val dy = dstH / 2f - mappedRect.centerY()
+            matrix.postTranslate(dx, dy)
+        } else {
+            // 覆盖与适应模式：严格对齐 Compose 预览的数学模型
+            val baseScale = if (adjustment.fillMode == FillMode.COVER) {
+                maxOf(dstW / srcW, dstH / srcH)
+            } else {
+                minOf(dstW / srcW, dstH / srcH)
+            }
+
+            val safeUserScale = adjustment.scale.coerceIn(
+                ImageAdjustment.SCALE_MIN,
+                ImageAdjustment.SCALE_MAX
+            )
+            val finalScale = baseScale * safeUserScale
+
+            matrix.setScale(finalScale * mirrorX, finalScale * mirrorY)
+
+            val srcRect = RectF(0f, 0f, srcW, srcH)
+            val mappedRect = RectF()
+            matrix.mapRect(mappedRect, srcRect) // 映射计算镜像和缩放后的实际边界
+
+            // 先将图片中心点平移到屏幕中心，再加上用户的拖拽偏移量 (保证与 Compose 效果 1:1)
+            val dx = (dstW / 2f + adjustment.offsetX) - mappedRect.centerX()
+            val dy = (dstH / 2f + adjustment.offsetY) - mappedRect.centerY()
+            matrix.postTranslate(dx, dy)
         }
-
-        val srcRect = RectF(0f, 0f, srcW, srcH)
-        val mappedRect = RectF()
-        matrix.mapRect(mappedRect, srcRect)
-
-        val centeredX = (dstW - mappedRect.width()) / 2f - mappedRect.left
-        val centeredY = (dstH - mappedRect.height()) / 2f - mappedRect.top
-
-        val extraOffsetX = when (adjustment.fillMode) {
-            FillMode.COVER -> adjustment.offsetX
-            FillMode.FIT -> 0f
-            FillMode.FREE -> adjustment.offsetX
-        }
-
-        val extraOffsetY = when (adjustment.fillMode) {
-            FillMode.COVER -> 0f
-            FillMode.FIT -> adjustment.offsetY
-            FillMode.FREE -> adjustment.offsetY
-        }
-
-        matrix.postTranslate(
-            centeredX + extraOffsetX,
-            centeredY + extraOffsetY
-        )
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         buildColorFilter(adjustment)?.let { paint.colorFilter = it }
@@ -249,8 +255,7 @@ object WallpaperSetter {
     }
 
     /**
-     * Keep the old function. It is no longer the main path,
-     * but stays here so previous functionality is not removed.
+     * 保留旧功能：纯镜像翻转（未使用但在之前版本存在）
      */
     @Suppress("unused")
     private fun applyMirror(

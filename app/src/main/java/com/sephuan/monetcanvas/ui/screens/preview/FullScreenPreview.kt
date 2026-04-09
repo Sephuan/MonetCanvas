@@ -246,50 +246,11 @@ private fun StaticFullScreenContent(
     screenWidth: Int,
     screenHeight: Int
 ) {
-    val imageWidth = wallpaper.width.coerceAtLeast(1)
-    val imageHeight = wallpaper.height.coerceAtLeast(1)
+    val imageWidth = wallpaper.width.toFloat().coerceAtLeast(1f)
+    val imageHeight = wallpaper.height.toFloat().coerceAtLeast(1f)
+    val screenWidthF = screenWidth.toFloat().coerceAtLeast(1f)
+    val screenHeightF = screenHeight.toFloat().coerceAtLeast(1f)
 
-    val baseScale = when (adjustment.fillMode) {
-        FillMode.COVER -> max(
-            screenWidth.toFloat() / imageWidth,
-            screenHeight.toFloat() / imageHeight
-        )
-
-        FillMode.FIT,
-        FillMode.FREE -> min(
-            screenWidth.toFloat() / imageWidth,
-            screenHeight.toFloat() / imageHeight
-        )
-    }
-
-    // ★ 与 PreviewMediaSection / WallpaperSetter 对齐：所有模式都支持 scale 滑块
-    val userScale = adjustment.scale.coerceIn(0.2f, 8f)
-    val finalScale = baseScale * userScale
-    val scaledWidth = imageWidth * finalScale
-    val scaledHeight = imageHeight * finalScale
-
-    val initialOffsetX = (screenWidth - scaledWidth) / 2f
-    val initialOffsetY = (screenHeight - scaledHeight) / 2f
-
-    // ★ 偏移逻辑与 PreviewMediaSection / WallpaperSetter 对齐
-    val offsetX = when (adjustment.fillMode) {
-        FillMode.COVER -> initialOffsetX + adjustment.offsetX
-        FillMode.FIT -> initialOffsetX
-        FillMode.FREE -> initialOffsetX + adjustment.offsetX
-    }
-
-    val offsetY = when (adjustment.fillMode) {
-        FillMode.COVER -> initialOffsetY
-        FillMode.FIT -> initialOffsetY + adjustment.offsetY
-        FillMode.FREE -> initialOffsetY + adjustment.offsetY
-    }
-
-    val contentScale = when (adjustment.fillMode) {
-        FillMode.COVER -> ContentScale.Crop
-        else -> ContentScale.Fit
-    }
-
-    // ★ 修正：使用与 PreviewMediaSection 完全一致的色彩矩阵
     val colorFilter = buildColorFilter(adjustment)
 
     Box(
@@ -301,26 +262,46 @@ private fun StaticFullScreenContent(
         AsyncImage(
             model = wallpaper.filePath,
             contentDescription = wallpaper.fileName,
-            contentScale = contentScale,
+            contentScale = ContentScale.FillBounds,
             colorFilter = colorFilter,
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val mirrorX = if (adjustment.mirrorHorizontal) -1f else 1f
                     val mirrorY = if (adjustment.mirrorVertical) -1f else 1f
-                    scaleX = finalScale * mirrorX
-                    scaleY = finalScale * mirrorY
-                    translationX = offsetX
-                    translationY = offsetY
+
+                    if (adjustment.fillMode == FillMode.STRETCH) {
+                        scaleX = mirrorX
+                        scaleY = mirrorY
+                        translationX = 0f
+                        translationY = 0f
+                    } else {
+                        val baseScale = if (adjustment.fillMode == FillMode.COVER) {
+                            max(screenWidthF / imageWidth, screenHeightF / imageHeight)
+                        } else {
+                            min(screenWidthF / imageWidth, screenHeightF / imageHeight)
+                        }
+
+                        val safeUserScale = adjustment.scale.coerceIn(
+                            ImageAdjustment.SCALE_MIN,
+                            ImageAdjustment.SCALE_MAX
+                        )
+                        val finalScale = baseScale * safeUserScale
+
+                        val visualWidth = imageWidth * finalScale
+                        val visualHeight = imageHeight * finalScale
+
+                        scaleX = (visualWidth / screenWidthF) * mirrorX
+                        scaleY = (visualHeight / screenHeightF) * mirrorY
+
+                        translationX = adjustment.offsetX
+                        translationY = adjustment.offsetY
+                    }
                 }
         )
     }
 }
 
-/**
- * ★ 修正：与 PreviewMediaSection.buildColorFilter 完全一致的色彩滤镜
- * 修复旧版 contrastMatrix 只有 15 个元素（ArrayIndexOutOfBoundsException）的 bug
- */
 private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
     val b = adjustment.brightness
     val c = adjustment.contrast
@@ -338,7 +319,6 @@ private fun buildColorFilter(adjustment: ImageAdjustment): ColorFilter? {
         )
     )
 
-    // ★ 修正：旧版这里只有 15 个元素，现补全为 20 个（4×5 矩阵）
     val contrastScale = 1f + c
     val contrastOffset = (-0.5f * contrastScale + 0.5f) * 255f
     val contrastMatrix = ColorMatrix(

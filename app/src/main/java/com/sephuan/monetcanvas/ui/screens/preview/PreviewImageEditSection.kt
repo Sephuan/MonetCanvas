@@ -115,13 +115,13 @@ fun PreviewImageEditSection(
                 }
             )
             FillModeChip(
-                label = stringResource(R.string.fill_free),
-                hint = stringResource(R.string.fill_free_hint),
-                selected = adjustment.fillMode == FillMode.FREE,
+                label = stringResource(R.string.fill_stretch),
+                hint = stringResource(R.string.fill_stretch_hint),
+                selected = adjustment.fillMode == FillMode.STRETCH,
                 onClick = {
                     onAdjustmentChange(
                         adjustment.copy(
-                            fillMode = FillMode.FREE,
+                            fillMode = FillMode.STRETCH,
                             offsetX = 0f,
                             offsetY = 0f,
                             scale = 1f
@@ -136,7 +136,7 @@ fun PreviewImageEditSection(
             text = when (adjustment.fillMode) {
                 FillMode.COVER -> stringResource(R.string.fill_cover_desc)
                 FillMode.FIT -> stringResource(R.string.fill_fit_desc)
-                FillMode.FREE -> stringResource(R.string.fill_free_desc)
+                FillMode.STRETCH -> stringResource(R.string.fill_stretch_desc)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -144,56 +144,65 @@ fun PreviewImageEditSection(
 
         SectionDivider()
 
-        // ━━━━━ 2. 缩放（新增）━━━━━
-        SectionLabel(stringResource(R.string.scale))
-        Text(
-            text = stringResource(R.string.scale_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(4.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        // ━━━━━ 2. 缩放 ━━━━━
+        // ★ 拉伸模式下无需调整比例，直接隐藏
+        AnimatedVisibility(
+            visible = adjustment.fillMode != FillMode.STRETCH,
+            enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
         ) {
-            Text(
-                text = "0.2",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(
-                value = adjustment.scale,
-                onValueChange = { onAdjustmentChange(adjustment.copy(scale = it)) },
-                valueRange = 0.2f..2.0f,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "2.0",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.small),
-                style = MaterialTheme.typography.labelSmall
-            )
-            Text(
-                text = "${(adjustment.scale * 100).roundToInt()}%",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = stringResource(R.string.large),
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SectionLabel(stringResource(R.string.scale))
+                Text(
+                    text = stringResource(R.string.scale_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
 
-        SectionDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = ImageAdjustment.SCALE_MIN.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(
+                        value = adjustment.scale,
+                        onValueChange = { onAdjustmentChange(adjustment.copy(scale = it)) },
+                        valueRange = ImageAdjustment.SCALE_MIN..ImageAdjustment.SCALE_MAX,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = ImageAdjustment.SCALE_MAX.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(R.string.small),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        text = "${(adjustment.scale * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.large),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
+                SectionDivider()
+            }
+        }
 
         // ━━━━━ 3. 画布背景色 ━━━━━
         SectionLabel(stringResource(R.string.canvas_bg))
@@ -303,7 +312,7 @@ fun PreviewImageEditSection(
     }
 }
 
-// ━━━━━ 通用组件（保持原有）━━━━━
+// ━━━━━ 通用组件 ━━━━━
 
 @Composable
 private fun SectionLabel(text: String) {
