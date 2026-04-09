@@ -15,11 +15,14 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
 import com.sephuan.monetcanvas.data.datastore.SettingsDataStore
 
@@ -183,6 +186,7 @@ fun MonetCanvasTheme(
     appCustomColor: Int? = null,
     appColorMode: String = SettingsDataStore.COLOR_MODE_MONET,
     darkModeSetting: String = SettingsDataStore.DARK_MODE_SYSTEM,
+    fontScale: Float = 1.0f, // ★ 新增字体缩放参数
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -232,20 +236,29 @@ fun MonetCanvasTheme(
         onDispose { }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = colorScheme.background
+    // ★ 重写 LocalDensity 注入全局字体缩放
+    val currentDensity = LocalDensity.current
+    val customDensity = Density(
+        density = currentDensity.density,
+        fontScale = fontScale
+    )
+
+    CompositionLocalProvider(LocalDensity provides customDensity) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(colorScheme.background)
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = colorScheme.background
             ) {
-                content()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colorScheme.background)
+                ) {
+                    content()
+                }
             }
         }
     }

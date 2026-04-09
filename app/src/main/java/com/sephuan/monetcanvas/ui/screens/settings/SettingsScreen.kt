@@ -1,5 +1,6 @@
 package com.sephuan.monetcanvas.ui.screens.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.sephuan.monetcanvas.R
 import com.sephuan.monetcanvas.ui.screens.settings.components.AboutSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.DarkModeSection
+import com.sephuan.monetcanvas.ui.screens.settings.components.FontScaleSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.LanguageSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.StorageSection
 import com.sephuan.monetcanvas.ui.screens.settings.components.ThemeSection
@@ -62,9 +64,11 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(padding)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp) // ★ 增加卡片之间的标准间距
             ) {
                 LanguageSection()
+                FontScaleSection() // ★ 新增：字体大小缩放卡片
                 ThemeSection(viewModel)
                 DarkModeSection(viewModel)
                 StorageSection(viewModel)

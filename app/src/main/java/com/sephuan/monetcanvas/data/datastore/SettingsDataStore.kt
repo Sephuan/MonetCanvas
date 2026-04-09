@@ -2,6 +2,7 @@ package com.sephuan.monetcanvas.data.datastore
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -49,6 +50,9 @@ class SettingsDataStore(private val context: Context) {
         val DARK_MODE = stringPreferencesKey("dark_mode")
 
         val STORAGE_TREE_URI = stringPreferencesKey("storage_tree_uri")
+
+        // ★ 新增：字体大小缩放比例
+        val FONT_SCALE = floatPreferencesKey("font_scale")
     }
 
     // ━━━━━ Monet 取色规则 ━━━━━
@@ -129,6 +133,16 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun saveDarkMode(mode: String) {
         context.settingsDataStore.edit { it[Keys.DARK_MODE] = mode }
+    }
+
+    // ━━━━━ 字体缩放 (新增) ━━━━━
+
+    val fontScaleFlow: Flow<Float> = context.settingsDataStore.data.map { prefs ->
+        prefs[Keys.FONT_SCALE] ?: 1.0f
+    }
+
+    suspend fun saveFontScale(scale: Float) {
+        context.settingsDataStore.edit { it[Keys.FONT_SCALE] = scale }
     }
 
     // ━━━━━ 存储路径 ━━━━━

@@ -101,6 +101,10 @@
     <string name="restart_now">立即重启</string>
     <string name="restart_later">稍后</string>
 
+    <!-- ★ 新增字体缩放相关的中文字符串 -->
+    <string name="settings_font_scale">字体大小</string>
+    <string name="settings_font_scale_desc">调整 App 内所有文字的显示大小</string>
+
     <string name="settings_storage">存储管理</string>
     <string name="backup_dir_format">备份目录：%1$s</string>
     <string name="storage_desc">壁纸文件始终安全保存在应用私有目录中，备份目录用于同步和共享</string>
@@ -176,7 +180,7 @@
     <string name="live_wp_perm_go_settings">前往应用设置</string>
     <string name="live_wp_perm_retry">重试激活</string>
 
-    <!-- ★ 修改：图片调整界面字符串 -->
+    <!-- 图片调整界面字符串 -->
     <string name="reset_all">重置全部</string>
     <string name="fill_mode">填充方式</string>
     <string name="fill_cover">覆盖</string>

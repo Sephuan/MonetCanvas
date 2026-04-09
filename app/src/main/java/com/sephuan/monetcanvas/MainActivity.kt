@@ -93,6 +93,9 @@ class MainActivity : ComponentActivity() {
                 initialValue = SettingsDataStore.DARK_MODE_SYSTEM
             )
 
+            // ★ 新增：收集字体缩放状态
+            val fontScale by settings.fontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
+
             val isDark = when (darkMode) {
                 SettingsDataStore.DARK_MODE_DARK -> true
                 SettingsDataStore.DARK_MODE_LIGHT -> false
@@ -103,7 +106,8 @@ class MainActivity : ComponentActivity() {
                 appSeedColor = appSeedColor,
                 appCustomColor = appCustomColor,
                 appColorMode = appColorMode,
-                darkModeSetting = darkMode
+                darkModeSetting = darkMode,
+                fontScale = fontScale // ★ 传入字体缩放比例
             ) {
                 StableSystemBars(isDark = isDark)
 
@@ -149,7 +153,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // ★ 修改点：引导页面只保留“前往设置”和“跳过”，去掉“激活”按钮
                 if (onboardingStep == STEP_LIVE_WP) {
                     val isActive = remember {
                         LiveWallpaperSetter.isOurLiveWallpaperActive(context)

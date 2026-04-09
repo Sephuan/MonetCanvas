@@ -100,6 +100,10 @@
     <string name="restart_now">Restart Now</string>
     <string name="restart_later">Later</string>
 
+    <!-- ★ New Font scale string -->
+    <string name="settings_font_scale">Font Size</string>
+    <string name="settings_font_scale_desc">Adjust the display size of all text in the app</string>
+
     <string name="settings_storage">Storage</string>
     <string name="backup_dir_format">Backup: %1$s</string>
     <string name="storage_desc">Wallpapers are safely stored in the app\'s private directory. Backup directory is for sync and sharing.</string>
@@ -175,7 +179,7 @@
     <string name="live_wp_perm_go_settings">Go to App Settings</string>
     <string name="live_wp_perm_retry">Retry Activation</string>
 
-    <!-- ★ Modified: Image adjustment strings -->
+    <!-- Image adjustment strings -->
     <string name="reset_all">Reset All</string>
     <string name="fill_mode">Fill Mode</string>
     <string name="fill_cover">Cover</string>
