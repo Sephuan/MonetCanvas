@@ -12,7 +12,9 @@ android {
 
     defaultConfig {
         applicationId = "com.sephuan.monetcanvas"
-        minSdk = 33
+        // ★ 核心改动：将 33 降低到 26，向下兼容到 Android 8.0
+        // （Android 12 是 API 31，完全涵盖在内）
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
@@ -56,8 +58,8 @@ dependencies {
 
     // 使用 libs 中已升级的版本
     implementation(libs.material3)
-    implementation(libs.activity.compose)   // 1.13.0-alpha01
-    implementation(libs.navigation.compose) // 2.9.5
+    implementation(libs.activity.compose)
+    implementation(libs.navigation.compose)
 
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
