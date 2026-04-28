@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -92,8 +93,6 @@ class MainActivity : ComponentActivity() {
             val darkMode by settings.darkModeFlow.collectAsStateWithLifecycle(
                 initialValue = SettingsDataStore.DARK_MODE_SYSTEM
             )
-
-            // ★ 新增：收集字体缩放状态
             val fontScale by settings.fontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
 
             val isDark = when (darkMode) {
@@ -107,7 +106,7 @@ class MainActivity : ComponentActivity() {
                 appCustomColor = appCustomColor,
                 appColorMode = appColorMode,
                 darkModeSetting = darkMode,
-                fontScale = fontScale // ★ 传入字体缩放比例
+                fontScale = fontScale
             ) {
                 StableSystemBars(isDark = isDark)
 
@@ -122,6 +121,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     onboardingStep = STEP_LIVE_WP
                 }
+
+                // ★ 移除所有手动 tick / 广播监听 / 遮罩刷新
+                // 主题与壁纸层已完全由 DataStore Flow 自动驱动，绝不因页面返回误触发
+                MonetNavGraph()
 
                 if (onboardingStep == STEP_WELCOME) {
                     WelcomeDialog(
@@ -172,8 +175,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
-
-                MonetNavGraph()
             }
         }
     }

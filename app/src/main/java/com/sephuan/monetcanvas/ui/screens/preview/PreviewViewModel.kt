@@ -1,5 +1,6 @@
 package com.sephuan.monetcanvas.ui.screens.preview
 
+import android.app.WallpaperManager
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
@@ -23,6 +24,7 @@ import com.sephuan.monetcanvas.util.LiveWallpaperSetter
 import com.sephuan.monetcanvas.util.WallpaperSetter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,6 +49,13 @@ enum class LiveWpResult {
     FAILED
 }
 
+private data class ColorAnalysisSnapshot(
+    val wallpaperId: Long,
+    val filePath: String,
+    val ruleKey: String,
+    val colors: ExtractedColors?
+)
+
 @HiltViewModel
 class PreviewViewModel @Inject constructor(
     private val repository: WallpaperRepository,
@@ -56,6 +65,15 @@ class PreviewViewModel @Inject constructor(
     companion object {
         private const val TAG = "PreviewVM"
         private const val ADJUSTMENT_SAVE_DEBOUNCE_MS = 180L
+
+        private const val LIVE_CONFIRM_POLL_INTERVAL_MS = 250L
+        private const val LIVE_CONFIRM_TIMEOUT_MS = 5_000L
+
+        private const val BANNER_SUCCESS_DURATION_MS = 1200L
+
+        // 动态壁纸确认后，等待 Service 写入 seed 的最长时间
+        private const val LIVE_SEED_WAIT_TIMEOUT_MS = 2500L
+        private const val LIVE_SEED_WAIT_INTERVAL_MS = 100L
     }
 
     private val _extractedColors = MutableStateFlow<ExtractedColors?>(null)
@@ -77,12 +95,17 @@ class PreviewViewModel @Inject constructor(
     val bannerSuccess: StateFlow<Boolean> = _bannerSuccess.asStateFlow()
 
     private var wasOurLiveWallpaperActiveBeforeLaunch = false
+    private var previousSysWallpaperId: Int = -1
+    private var previousLockWallpaperId: Int = -1
 
-    // 静态壁纸调整参数：防抖保存，避免拖拽/缩放时频繁写数据库导致掉帧
     private var adjustmentSaveJob: Job? = null
     private var pendingAdjustmentWallpaper: WallpaperEntity? = null
     private var pendingAdjustment: ImageAdjustment? = null
     private val lastSavedAdjustments = mutableMapOf<Long, ImageAdjustment>()
+
+    private var confirmCheckJob: Job? = null
+    private val analyzeGeneration = AtomicLong(0L)
+    private var latestColorSnapshot: ColorAnalysisSnapshot? = null
 
     fun clearLiveWpResult() {
         _liveWpResult.value = LiveWpResult.IDLE
@@ -137,10 +160,6 @@ class PreviewViewModel @Inject constructor(
         return adjustment
     }
 
-    /**
-     * 防抖保存，供预览手势/滑块实时调用。
-     * 这样不会在每一帧手势都打一次 Room update。
-     */
     fun saveAdjustmentForWallpaper(wallpaper: WallpaperEntity, adj: ImageAdjustment) {
         pendingAdjustmentWallpaper = wallpaper
         pendingAdjustment = adj
@@ -157,9 +176,6 @@ class PreviewViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 页面退出 / 返回 / 应用壁纸前调用，立即落库一次，避免最后一次调整丢失。
-     */
     suspend fun flushAdjustmentForWallpaper(
         wallpaper: WallpaperEntity,
         adj: ImageAdjustment
@@ -171,27 +187,98 @@ class PreviewViewModel @Inject constructor(
         persistWallpaperAdjustment(wallpaper, adj)
     }
 
+    /**
+     * 预览页提前取色：
+     * 只更新预览色卡与内存快照，绝不提前写入 appSeedColor。
+     */
     fun analyzeColors(wallpaper: WallpaperEntity, rule: MonetRule) {
         viewModelScope.launch {
-            _isAnalyzing.value = true
-            Log.d(TAG, "分析颜色: ${wallpaper.fileName}")
+            analyzeColorsInternal(
+                wallpaper = wallpaper,
+                rule = rule,
+                clearOldIfMismatch = true
+            )
+        }
+    }
 
-            val colors = ColorEngine.extractColors(
+    private suspend fun analyzeColorsInternal(
+        wallpaper: WallpaperEntity,
+        rule: MonetRule,
+        clearOldIfMismatch: Boolean
+    ): ExtractedColors? {
+        val requestId = analyzeGeneration.incrementAndGet()
+        val expectedRuleKey = buildRuleKey(rule)
+
+        if (clearOldIfMismatch && !isSnapshotFor(wallpaper, rule)) {
+            _extractedColors.value = null
+        }
+
+        _isAnalyzing.value = true
+        Log.d(
+            TAG,
+            "分析颜色: file=${wallpaper.fileName}, id=${wallpaper.id}, rule=$expectedRuleKey, requestId=$requestId"
+        )
+
+        val colors = try {
+            ColorEngine.extractColors(
                 filePath = wallpaper.filePath,
                 rule = rule,
                 type = wallpaper.type
             )
-
-            _extractedColors.value = colors
-            _isAnalyzing.value = false
-
-            Log.d(TAG, "颜色结果: ${colors?.primary?.let { "#${Integer.toHexString(it)}" }}")
-
-            val currentMode = settingsDataStore.appColorModeFlow.first()
-            if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
-                settingsDataStore.saveAppSeedColor(colors?.primary)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "analyzeColorsInternal failed", e)
+            null
         }
+
+        if (analyzeGeneration.get() != requestId) {
+            Log.d(TAG, "分析结果已过期，丢弃 requestId=$requestId")
+            return null
+        }
+
+        latestColorSnapshot = ColorAnalysisSnapshot(
+            wallpaperId = wallpaper.id,
+            filePath = wallpaper.filePath,
+            ruleKey = expectedRuleKey,
+            colors = colors
+        )
+
+        _extractedColors.value = colors
+        _isAnalyzing.value = false
+
+        Log.d(
+            TAG,
+            "颜色分析完成: file=${wallpaper.fileName}, color=${colors?.primary?.toHex()}"
+        )
+
+        return colors
+    }
+
+    private suspend fun getFreshColorsFor(
+        wallpaper: WallpaperEntity,
+        rule: MonetRule
+    ): ExtractedColors? {
+        val snapshot = latestColorSnapshot
+
+        if (
+            snapshot != null &&
+            snapshot.wallpaperId == wallpaper.id &&
+            snapshot.filePath == wallpaper.filePath &&
+            snapshot.ruleKey == buildRuleKey(rule) &&
+            snapshot.colors != null
+        ) {
+            Log.d(
+                TAG,
+                "使用匹配缓存颜色: file=${wallpaper.fileName}, color=${snapshot.colors.primary.toHex()}"
+            )
+            return snapshot.colors
+        }
+
+        Log.d(TAG, "缓存颜色不匹配，补取色: file=${wallpaper.fileName}")
+        return analyzeColorsInternal(
+            wallpaper = wallpaper,
+            rule = rule,
+            clearOldIfMismatch = true
+        )
     }
 
     fun applyWallpaper(
@@ -210,9 +297,8 @@ class PreviewViewModel @Inject constructor(
         viewModelScope.launch {
             when (wallpaper.type) {
                 WallpaperType.STATIC -> {
-                    // 应用前先把最新调整参数立即保存一次
                     flushAdjustmentForWallpaper(wallpaper, adjustment)
-                    applyStaticWallpaper(context, wallpaper, target, adjustment)
+                    applyStaticWallpaper(context, wallpaper, target, adjustment, rule)
                 }
 
                 WallpaperType.LIVE -> {
@@ -226,9 +312,9 @@ class PreviewViewModel @Inject constructor(
         context: Context,
         wallpaper: WallpaperEntity,
         target: Int,
-        adjustment: ImageAdjustment
+        adjustment: ImageAdjustment,
+        rule: MonetRule
     ) {
-        // 核心优化：位图解码 / 变换 / setBitmap 整体移出主线程
         val success = withContext(Dispatchers.Default) {
             WallpaperSetter.setStaticWallpaper(
                 context = context,
@@ -240,6 +326,16 @@ class PreviewViewModel @Inject constructor(
 
         if (success) {
             repository.markAsUsed(wallpaper.id)
+
+            val currentMode = settingsDataStore.appColorModeFlow.first()
+            if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+                val colors = getFreshColorsFor(wallpaper, rule)
+                colors?.primary?.let {
+                    Log.d(TAG, "STATIC: 本地写入 appSeedColor=${it.toHex()}")
+                    settingsDataStore.saveAppSeedColor(it)
+                }
+            }
+
             _applyState.value = ApplyState.SUCCESS
             Toast.makeText(context, "✓", Toast.LENGTH_SHORT).show()
             delay(1000)
@@ -257,6 +353,9 @@ class PreviewViewModel @Inject constructor(
         wallpaper: WallpaperEntity,
         rule: MonetRule
     ) {
+        confirmCheckJob?.cancel()
+        confirmCheckJob = null
+
         val saved = LiveWallpaperSetter.savePendingConfig(
             context = context,
             videoPath = wallpaper.filePath,
@@ -276,6 +375,10 @@ class PreviewViewModel @Inject constructor(
             _applyState.value = ApplyState.IDLE
             return
         }
+
+        val wm = WallpaperManager.getInstance(context)
+        previousSysWallpaperId = wm.getWallpaperId(WallpaperManager.FLAG_SYSTEM)
+        previousLockWallpaperId = wm.getWallpaperId(WallpaperManager.FLAG_LOCK)
 
         wasOurLiveWallpaperActiveBeforeLaunch =
             LiveWallpaperSetter.isOurLiveWallpaperActive(context)
@@ -299,30 +402,47 @@ class PreviewViewModel @Inject constructor(
     ) {
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
 
-        viewModelScope.launch {
-            delay(350)
+        confirmCheckJob?.cancel()
+        confirmCheckJob = viewModelScope.launch {
+            val startAt = System.currentTimeMillis()
+            val wm = WallpaperManager.getInstance(context)
 
-            val hasPending = LiveWallpaperSetter.hasPendingConfig(context)
-            val isActiveNow = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+            while (_applyState.value == ApplyState.WAITING_CONFIRM) {
+                val hasPending = LiveWallpaperSetter.hasPendingConfig(context)
+                if (!hasPending) {
+                    _applyState.value = ApplyState.IDLE
+                    return@launch
+                }
 
-            if (!hasPending) {
-                Log.d(TAG, "系统页返回：无 pending 配置，重置状态")
-                _applyState.value = ApplyState.IDLE
-                return@launch
-            }
+                val isActiveNow = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
 
-            val shouldTreatAsConfirmed = when {
-                !wasOurLiveWallpaperActiveBeforeLaunch && isActiveNow -> true
-                wasOurLiveWallpaperActiveBeforeLaunch && isActiveNow -> true
-                else -> false
-            }
+                val newSysId = wm.getWallpaperId(WallpaperManager.FLAG_SYSTEM)
+                val newLockId = wm.getWallpaperId(WallpaperManager.FLAG_LOCK)
 
-            if (shouldTreatAsConfirmed) {
-                handleConfirmed(context, wallpaper, rule)
-            } else {
-                Log.d(TAG, "系统页返回：判定为取消")
-                LiveWallpaperSetter.clearPendingConfig(context)
-                _applyState.value = ApplyState.IDLE
+                val idChanged =
+                    (newSysId != previousSysWallpaperId) ||
+                            (newLockId != previousLockWallpaperId)
+
+                val shouldConfirm = if (wasOurLiveWallpaperActiveBeforeLaunch) {
+                    isActiveNow && idChanged
+                } else {
+                    isActiveNow
+                }
+
+                if (shouldConfirm) {
+                    Log.d(TAG, "系统页返回：确认成功 (idChanged=$idChanged)")
+                    handleConfirmed(context, wallpaper, rule)
+                    return@launch
+                }
+
+                if (System.currentTimeMillis() - startAt >= LIVE_CONFIRM_TIMEOUT_MS) {
+                    Log.d(TAG, "系统页返回：等待超时未发生改变，视为取消")
+                    LiveWallpaperSetter.clearPendingConfig(context)
+                    _applyState.value = ApplyState.IDLE
+                    return@launch
+                }
+
+                delay(LIVE_CONFIRM_POLL_INTERVAL_MS)
             }
         }
     }
@@ -333,6 +453,8 @@ class PreviewViewModel @Inject constructor(
         rule: MonetRule
     ) {
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
+        confirmCheckJob?.cancel()
+        confirmCheckJob = null
         viewModelScope.launch {
             handleConfirmed(context, wallpaper, rule)
         }
@@ -340,29 +462,107 @@ class PreviewViewModel @Inject constructor(
 
     fun onUserCancelled(context: Context) {
         if (_applyState.value != ApplyState.WAITING_CONFIRM) return
+        confirmCheckJob?.cancel()
+        confirmCheckJob = null
         LiveWallpaperSetter.clearPendingConfig(context)
         _applyState.value = ApplyState.IDLE
     }
 
+    /**
+     * ★ 关键修复：
+     * LIVE 不再本地写 appSeedColor，只等待 Service(active) 写入。
+     * STATIC 仍然本地写入。
+     */
     private suspend fun handleConfirmed(
         context: Context,
         wallpaper: WallpaperEntity,
         rule: MonetRule
     ) {
-        LiveWallpaperSetter.promotePendingToActive(context)
-        repository.markAsUsed(wallpaper.id)
+        confirmCheckJob?.cancel()
+        confirmCheckJob = null
 
-        // 重新分析颜色并更新主题
-        analyzeColors(wallpaper, rule)
+        val currentMode = settingsDataStore.appColorModeFlow.first()
+        val beforeSeed = if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+            settingsDataStore.appSeedColorFlow.first()
+        } else {
+            null
+        }
 
-        _applyState.value = ApplyState.SUCCESS
-        _showBanner.value = true
-        _bannerSuccess.value = true
+        if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+            _showBanner.value = true
+            _bannerSuccess.value = false
+            delay(50)
+        }
 
-        delay(1200)
+        when (wallpaper.type) {
+            WallpaperType.LIVE -> {
+                Log.d(TAG, "LIVE: 不再本地写 seed，交给 Service(active) 作为唯一真源")
 
-        _showBanner.value = false
-        _applyState.value = ApplyState.IDLE
+                LiveWallpaperSetter.promotePendingToActive(context)
+                repository.markAsUsed(wallpaper.id)
+
+                _applyState.value = ApplyState.SUCCESS
+
+                if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+                    var latestSeed = beforeSeed
+                    val startAt = System.currentTimeMillis()
+
+                    while (System.currentTimeMillis() - startAt < LIVE_SEED_WAIT_TIMEOUT_MS) {
+                        delay(LIVE_SEED_WAIT_INTERVAL_MS)
+                        latestSeed = settingsDataStore.appSeedColorFlow.first()
+                        Log.d(
+                            TAG,
+                            "LIVE: 等待 Service 写入 seed, before=${beforeSeed?.toHex()}, now=${latestSeed?.toHex()}"
+                        )
+                        if (latestSeed != null && latestSeed != beforeSeed) {
+                            break
+                        }
+                    }
+
+                    if (latestSeed != null && latestSeed != beforeSeed) {
+                        Log.d(TAG, "LIVE: 观察到 Service 已写入新 seed=${latestSeed.toHex()}")
+                        _bannerSuccess.value = true
+                        delay(BANNER_SUCCESS_DURATION_MS)
+                    } else {
+                        Log.d(TAG, "LIVE: 未观察到 seed 变化，结束等待")
+                    }
+
+                    _showBanner.value = false
+                }
+
+                delay(200)
+                _applyState.value = ApplyState.IDLE
+            }
+
+            WallpaperType.STATIC -> {
+                val colors = if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+                    getFreshColorsFor(wallpaper, rule)
+                } else {
+                    null
+                }
+
+                if (currentMode == SettingsDataStore.COLOR_MODE_RULE && colors?.primary != null) {
+                    Log.d(TAG, "STATIC(handleConfirmed): 本地写入 appSeedColor=${colors.primary.toHex()}")
+                    settingsDataStore.saveAppSeedColor(colors.primary)
+                }
+
+                LiveWallpaperSetter.promotePendingToActive(context)
+                repository.markAsUsed(wallpaper.id)
+
+                _applyState.value = ApplyState.SUCCESS
+
+                if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+                    if (colors?.primary != null && colors.primary != beforeSeed) {
+                        _bannerSuccess.value = true
+                        delay(BANNER_SUCCESS_DURATION_MS)
+                    }
+                    _showBanner.value = false
+                }
+
+                delay(200)
+                _applyState.value = ApplyState.IDLE
+            }
+        }
     }
 
     fun deleteWallpaper(
@@ -430,6 +630,28 @@ class PreviewViewModel @Inject constructor(
         } ?: wallpaper
     }
 
+    private fun buildRuleKey(rule: MonetRule): String {
+        return buildString {
+            append(rule.framePosition.name)
+            append('|')
+            append(rule.colorRegion.name)
+            append('|')
+            append(rule.tonePreference.name)
+            append('|')
+            append(rule.manualOverrideColor?.toString() ?: "null")
+        }
+    }
+
+    private fun isSnapshotFor(
+        wallpaper: WallpaperEntity,
+        rule: MonetRule
+    ): Boolean {
+        val snapshot = latestColorSnapshot ?: return false
+        return snapshot.wallpaperId == wallpaper.id &&
+                snapshot.filePath == wallpaper.filePath &&
+                snapshot.ruleKey == buildRuleKey(rule)
+    }
+
     private fun Color.toArgbInt(): Int {
         return android.graphics.Color.argb(
             (alpha * 255).toInt(),
@@ -439,8 +661,11 @@ class PreviewViewModel @Inject constructor(
         )
     }
 
+    private fun Int.toHex(): String = "#${Integer.toHexString(this)}"
+
     override fun onCleared() {
         adjustmentSaveJob?.cancel()
+        confirmCheckJob?.cancel()
         super.onCleared()
     }
 }
