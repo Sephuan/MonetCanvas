@@ -222,6 +222,11 @@ class LiveWallpaperService : WallpaperService() {
                         TAG,
                         "onComputeColors: 当前无缓存命中 config=${config?.videoPath}, source=${config?.source}"
                     )
+                    // ★ 修复：缓存不匹配时尽快发起一次取色请求
+                    if (config != null && globalCachedConfig != config) {
+                        Log.d(TAG, "onComputeColors: 缓存与当前配置不匹配，触发补取色")
+                        startExtraction(config)
+                    }
                 }
                 return computedColors
             }
@@ -483,9 +488,11 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         /**
-         * ★ 关键修复：
          * active engine 颜色应用后，延迟重上报两次，确保系统在 engine 切换稳定后
          * 仍然能收到最终正确颜色。
+         *
+         * ★ 关键修复：重上报时必须验证 globalCachedConfig 仍匹配当前 config，
+         *   防止另一个壁纸的 Engine 在延迟期间更新了全局缓存导致颜色污染。
          */
         private fun scheduleActiveColorRebroadcast(config: ResolvedConfig) {
             activeNotifyToken += 1L
@@ -493,12 +500,28 @@ class LiveWallpaperService : WallpaperService() {
 
             val rebroadcast = Runnable {
                 if (token != activeNotifyToken) return@Runnable
+
                 val latest = resolveEffectiveConfig()
                 if (latest == null || latest != config) {
                     Log.d(TAG, "延迟重上报取消：active 配置已变化")
                     return@Runnable
                 }
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    // ★ 必须验证全局缓存仍然匹配本壁纸，防止被另一 Engine 覆盖
+                    if (globalCachedConfig != config) {
+                        Log.d(
+                            TAG,
+                            "延迟重上报取消：全局缓存已被另一壁纸覆盖, expected=${config.videoPath}, actual=${globalCachedConfig?.videoPath}"
+                        )
+                        return@Runnable
+                    }
+
+                    if (globalCachedWallpaperColors == null) {
+                        Log.d(TAG, "延迟重上报取消：全局缓存颜色为空")
+                        return@Runnable
+                    }
+
                     computedColors = globalCachedWallpaperColors
                     Log.d(
                         TAG,
@@ -513,6 +536,16 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         private fun maybePushSeedColorFromService(primary: Int, config: ResolvedConfig) {
+            // ★ 修复：全局缓存必须匹配当前壁纸，才允许写入 seed
+            //   防止跨壁纸的 globalLastSavedSeedColor 污染
+            if (globalCachedConfig != config) {
+                Log.d(
+                    TAG,
+                    "maybePushSeedColorFromService 跳过：全局缓存不匹配当前壁纸, config=${config.videoPath}, cache=${globalCachedConfig?.videoPath}"
+                )
+                return
+            }
+
             if (globalLastSavedSeedColor == primary) {
                 Log.d(
                     TAG,
