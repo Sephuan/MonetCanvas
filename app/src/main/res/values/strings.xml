@@ -52,6 +52,11 @@
     <string name="secondary_color">次色</string>
     <string name="tertiary_color">第三色</string>
 
+    <!-- 预览页底部面板标签 -->
+    <string name="panel_actions">操作</string>
+    <string name="panel_adjust">调整</string>
+    <string name="panel_color_pick">取色</string>
+
     <!-- 取色规则 -->
     <string name="color_rules">取色规则</string>
     <string name="frame_position">取色帧位置</string>

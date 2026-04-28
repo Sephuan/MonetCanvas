@@ -51,6 +51,11 @@
     <string name="secondary_color">Secondary</string>
     <string name="tertiary_color">Tertiary</string>
 
+    <!-- Preview panel tabs -->
+    <string name="panel_actions">Actions</string>
+    <string name="panel_adjust">Adjust</string>
+    <string name="panel_color_pick">Color Pick</string>
+
     <!-- Color Rules -->
     <string name="color_rules">Color Rules</string>
     <string name="frame_position">Frame Position</string>

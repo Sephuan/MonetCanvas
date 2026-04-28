@@ -230,21 +230,21 @@ private fun StaticPanelContent(
             PanelTab(
                 selected = pagerState.currentPage == 0,
                 icon = Icons.Outlined.Image,
-                label = "操作"
+                label = stringResource(R.string.panel_actions)
             ) {
                 scope.launch { pagerState.animateScrollToPage(0) }
             }
             PanelTab(
                 selected = pagerState.currentPage == 1,
                 icon = Icons.Outlined.Edit,
-                label = "调整"
+                label = stringResource(R.string.panel_adjust)
             ) {
                 scope.launch { pagerState.animateScrollToPage(1) }
             }
             PanelTab(
                 selected = pagerState.currentPage == 2,
                 icon = Icons.Outlined.Palette,
-                label = "取色"
+                label = stringResource(R.string.panel_color_pick)
             ) {
                 scope.launch { pagerState.animateScrollToPage(2) }
             }
@@ -323,14 +323,14 @@ private fun LivePanelContent(
             PanelTab(
                 selected = pagerState.currentPage == 0,
                 icon = Icons.Outlined.Image,
-                label = "操作"
+                label = stringResource(R.string.panel_actions)
             ) {
                 scope.launch { pagerState.animateScrollToPage(0) }
             }
             PanelTab(
                 selected = pagerState.currentPage == 1,
                 icon = Icons.Outlined.Palette,
-                label = "取色"
+                label = stringResource(R.string.panel_color_pick)
             ) {
                 scope.launch { pagerState.animateScrollToPage(1) }
             }
