@@ -136,6 +136,14 @@
     <string name="settings_about">About</string>
     <string name="about_desc">A Material You wallpaper app for static and live wallpapers</string>
     <string name="about_storage_note">Wallpapers are safely stored in app\'s private directory, unaffected by gallery/external deletion</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_developer">Developer</string>
+    <string name="about_source_code">Source Code</string>
+    <string name="about_github_repo">GitHub Repository</string>
+    <string name="about_github_developer">Developer GitHub</string>
+    <string name="about_acknowledgments">Acknowledgments</string>
+    <string name="about_acknowledgments_desc">Special thanks to hhad8 for suggestions and assistance</string>
+    <string name="about_license">This project is open source under the MIT License</string>
 
     <!-- Preset colors -->
     <string name="color_sakura">Sakura Pink</string>

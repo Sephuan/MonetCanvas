@@ -32,6 +32,7 @@ import com.sephuan.monetcanvas.data.model.ImageAdjustment
 import com.sephuan.monetcanvas.ui.screens.home.HomeScreen
 import com.sephuan.monetcanvas.ui.screens.preview.FullScreenPreview
 import com.sephuan.monetcanvas.ui.screens.preview.PreviewScreen
+import com.sephuan.monetcanvas.ui.screens.settings.AboutScreen
 import com.sephuan.monetcanvas.ui.screens.settings.SettingsScreen
 
 private object Routes {
@@ -39,6 +40,7 @@ private object Routes {
     const val PREVIEW = "preview/{wallpaperId}"
     const val FULL_SCREEN = "full_screen/{wallpaperId}"
     const val SETTINGS = "settings"
+    const val ABOUT = "settings/about"
 
     fun preview(id: Long) = "preview/$id"
     fun fullScreen(id: Long) = "full_screen/$id"
@@ -290,6 +292,33 @@ fun MonetNavGraph(
             }
         ) {
             SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenAbout = { navController.navigate(Routes.ABOUT) }
+            )
+        }
+
+        composable(
+            route = Routes.ABOUT,
+            enterTransition = {
+                fadeIn(animationSpec = tween(180))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(160))
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(280)
+                ) + fadeIn(animationSpec = tween(220))
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(240)
+                ) + fadeOut(animationSpec = tween(160))
+            }
+        ) {
+            AboutScreen(
                 onBack = { navController.popBackStack() }
             )
         }

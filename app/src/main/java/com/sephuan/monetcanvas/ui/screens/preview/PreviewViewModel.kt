@@ -436,9 +436,15 @@ class PreviewViewModel @Inject constructor(
                 }
 
                 if (System.currentTimeMillis() - startAt >= LIVE_CONFIRM_TIMEOUT_MS) {
-                    Log.d(TAG, "系统页返回：等待超时未发生改变，视为取消")
-                    LiveWallpaperSetter.clearPendingConfig(context)
-                    _applyState.value = ApplyState.IDLE
+                    val isStillOurs = LiveWallpaperSetter.isOurLiveWallpaperActive(context)
+                    if (isStillOurs) {
+                        Log.d(TAG, "系统页返回：等待超时，检测到壁纸已被应用，执行确认")
+                        handleConfirmed(context, wallpaper, rule)
+                    } else {
+                        Log.d(TAG, "系统页返回：等待超时，壁纸未被应用，视为取消")
+                        LiveWallpaperSetter.clearPendingConfig(context)
+                        _applyState.value = ApplyState.IDLE
+                    }
                     return@launch
                 }
 
@@ -496,10 +502,19 @@ class PreviewViewModel @Inject constructor(
 
         when (wallpaper.type) {
             WallpaperType.LIVE -> {
-                Log.d(TAG, "LIVE: 不再本地写 seed，交给 Service(active) 作为唯一真源")
+                Log.d(TAG, "LIVE: 系统确认，立即取色并写入 seed 作为兜底")
 
                 LiveWallpaperSetter.promotePendingToActive(context)
                 repository.markAsUsed(wallpaper.id)
+
+                // ★ 修复：立即取色并直接写入 appSeedColor，不再仅依赖 Service 异步写入
+                if (currentMode == SettingsDataStore.COLOR_MODE_RULE) {
+                    val colors = getFreshColorsFor(wallpaper, rule)
+                    if (colors?.primary != null && colors.primary != beforeSeed) {
+                        Log.d(TAG, "LIVE: 立即写入 appSeedColor=${colors.primary.toHex()}")
+                        settingsDataStore.saveAppSeedColor(colors.primary)
+                    }
+                }
 
                 _applyState.value = ApplyState.SUCCESS
 

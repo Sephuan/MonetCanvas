@@ -33,6 +33,7 @@ import com.sephuan.monetcanvas.ui.screens.settings.components.ThemeSection
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenAbout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     // 这里故意不使用 BackHandler / PredictiveBackHandler
@@ -72,7 +73,7 @@ fun SettingsScreen(
                 ThemeSection(viewModel)
                 DarkModeSection(viewModel)
                 StorageSection(viewModel)
-                AboutSection()
+                AboutSection(onOpenAbout = onOpenAbout)
             }
         }
     }

@@ -137,6 +137,14 @@
     <string name="settings_about">关于</string>
     <string name="about_desc">一款支持静态 + 动态壁纸管理的 Material You 壁纸应用</string>
     <string name="about_storage_note">壁纸文件安全存储在应用私有目录，不受相册/外部删除影响</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_developer">开发者</string>
+    <string name="about_source_code">开源仓库</string>
+    <string name="about_github_repo">GitHub 仓库</string>
+    <string name="about_github_developer">开发者 GitHub</string>
+    <string name="about_acknowledgments">致谢</string>
+    <string name="about_acknowledgments_desc">感谢 hhad8 提供的相关建议与帮助</string>
+    <string name="about_license">本项目基于 MIT 许可证开源</string>
 
     <!-- 预设颜色名 -->
     <string name="color_sakura">樱花粉</string>
