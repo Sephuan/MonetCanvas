@@ -7,6 +7,11 @@
 [![GitHub release](https://img.shields.io/github/v/release/Sephuan/MonetCanvas)](https://github.com/Sephuan/MonetCanvas/releases)
 [![License](https://img.shields.io/github/license/Sephuan/MonetCanvas)](LICENSE)
 
+<p align="center">
+  <a href="README.md">🇨🇳 中文</a> ·
+  <a href="README-en.md">🇬🇧 English</a>
+</p>
+
 </div>
 
 ---
